@@ -1776,226 +1776,279 @@ body:has(.landing-night:not([data-theme='dark'])) {
 }
 
 /*
- * Sectors (sector-showcase.tsx): the logo strip's dark band continued, in
- * Databricks' platform-section shape -- pixel eyebrow in lava, a headline,
- * pill tabs, one wide light panel for the chosen sector, then all six as a
- * two-column list (owner's direction, 24 Sep 2026).
+ * Sectors (sector-showcase.tsx). The band stays the logo strip's (owner's
+ * direction, 24 Sep 2026: only the card is cream, the ground is the
+ * branding band's). Everything sits on an 8px scale inside one 1200px
+ * measure:
+ *
+ *   tabs   six equal cells, 72px tall, on the band; the chosen one lights
+ *          up and a 2px lava bar under it sits on the card's top edge
+ *   card   cream, 64px padding, two equal columns 64px apart
+ *   chart  a 64px caption row + 24px + a fixed 320px plot = 408px
+ *   copy   stretched to the same 408px; its list is pinned to the foot, so
+ *          its last rule lands exactly on the chart's baseline
+ *
+ * No boxes inside the card and no rounded corners anywhere in it: the
+ * cells are square, so the card is too.
  */
 .sectors {
   --band: #0b2026;
   --band-ink: #f3f4f0;
-  --band-soft: rgba(243, 244, 240, 0.64);
-  --band-pill: rgba(255, 255, 255, 0.08);
-  padding: clamp(3rem, 6vw, 5rem) max(16px, calc((100% - 1320px) / 2)) clamp(4rem, 8vw, 6.5rem);
+  --band-soft: rgba(243, 244, 240, 0.56);
+  --band-line: rgba(243, 244, 240, 0.12);
+  --card: #f1ede5;
+  --card-ink: #1b3139;
+  --card-soft: rgba(27, 49, 57, 0.66);
+  --card-faint: rgba(27, 49, 57, 0.42);
+  --card-line: rgba(27, 49, 57, 0.14);
+  --accent: #ff3621;
+  padding: 96px 24px;
   background: var(--band);
   color: var(--band-ink);
-  text-align: center;
+}
+/* In the dark theme the strip has no band of its own; the section follows
+   the page's ground so the two still read as one. */
+.landing-night[data-theme='dark'] .sectors {
+  --band: transparent;
+}
+.sectors > * {
+  max-width: 1200px;
+  margin-inline: auto;
 }
 .sectors-eyebrow {
   color: #ff7a66;
   font-family: var(--font-lp-pixel), ui-monospace, monospace;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 300;
   letter-spacing: 0.08em;
+  text-align: center;
   text-transform: uppercase;
 }
 .sectors-title {
-  margin-top: 1.1rem;
+  margin-top: 16px;
   font-family: var(--font-lp-display), var(--font-lp-sans), sans-serif;
-  font-size: clamp(2.2rem, 4vw, 3.4rem);
+  font-size: clamp(40px, 4vw, 56px);
   font-weight: 500;
-  line-height: 1.04;
+  line-height: 1.07;
   letter-spacing: -0.025em;
+  text-align: center;
 }
+
+/* Six equal cells on the band. The chosen one is not filled (owner's
+   direction, 24 Sep 2026): its text lights up and a bar sits on the card. */
 .sectors-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 12px;
-  margin-top: clamp(2rem, 4vw, 3rem);
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  margin-top: 64px;
+  border-top: 1px solid var(--band-line);
 }
 .sectors-tabs button {
-  height: 44px;
-  padding: 0 20px;
-  border-radius: 999px;
-  background: var(--band-pill);
-  color: var(--band-ink);
-  font-size: 16px;
-  font-weight: 500;
-  transition: background-color 160ms ease, color 160ms ease;
-}
-.sectors-tabs button:hover {
-  background: rgba(255, 255, 255, 0.14);
-}
-.sectors-tabs button.is-active {
-  background: #fff;
-  color: #1b3139;
-  font-weight: 600;
-}
-.sectors-panel {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: clamp(1.5rem, 4vw, 4rem);
-  align-items: center;
-  margin-top: clamp(2rem, 4vw, 3rem);
-  padding: clamp(1.75rem, 4vw, 3.5rem);
-  border-radius: 4px;
-  background: #eeebe7;
-  color: #1b3139;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-start;
+  height: 72px;
+  padding: 16px;
+  border-left: 1px solid var(--band-line);
+  color: var(--band-soft);
+  font-family: var(--font-lp-pixel), ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 300;
+  letter-spacing: 0.06em;
   text-align: left;
+  text-transform: uppercase;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
 }
-@media (max-width: 860px) {
-  .sectors-panel {
-    grid-template-columns: minmax(0, 1fr);
+.sectors-tabs button:first-child {
+  border-left: 0;
+}
+.sectors-tabs button span {
+  font-size: 12px;
+}
+.sectors-tabs button::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.sectors-tabs button:hover,
+.sectors-tabs button.is-active {
+  color: var(--band-ink);
+}
+.sectors-tabs button.is-active span {
+  color: #ff7a66;
+}
+.sectors-tabs button.is-active::after {
+  transform: scaleX(1);
+}
+@media (max-width: 900px) {
+  /* One row still, scrolled sideways, so the chosen cell always sits on the
+     card. */
+  .sectors-tabs {
+    grid-template-columns: none;
+    grid-auto-columns: minmax(152px, 1fr);
+    grid-auto-flow: column;
+    overflow-x: auto;
   }
 }
-.sectors-icon {
+
+.sectors-panel {
   display: grid;
-  place-items: center;
-  width: 84px;
-  height: 84px;
-  border-radius: 18px;
-  background: #fff;
-  box-shadow: 0 10px 30px -12px rgba(27, 49, 57, 0.28);
-  color: #ff3621;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 64px;
+  padding: 64px;
+  background: var(--card);
+  color: var(--card-ink);
 }
-.sectors-icon svg {
-  width: 38px;
-  height: 38px;
-  stroke-width: 1.75;
+@media (max-width: 900px) {
+  .sectors-panel {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 40px;
+    padding: 32px 24px;
+  }
+}
+.sectors-chart {
+  margin: 0;
+}
+.sectors-chart figcaption {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  height: 64px;
+}
+.sectors-chart strong {
+  font-family: var(--font-lp-display), var(--font-lp-sans), sans-serif;
+  font-size: 56px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+.sectors-chart figcaption span {
+  color: var(--card-soft);
+  font-size: 15px;
+}
+.sectors-chart figcaption em {
+  margin-left: auto;
+  color: var(--card-faint);
+  font-size: 12px;
+  font-style: normal;
+}
+.sectors-chart svg {
+  display: block;
+  width: 100%;
+  height: 320px;
+  margin-top: 24px;
+  border-bottom: 1px solid var(--card-ink);
+}
+.sectors-grid-line {
+  stroke: var(--card-line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.sectors-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 1;
+  animation: sectors-draw 1.1s cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+.sectors-line.is-dashed {
+  stroke: var(--card-faint);
+  stroke-dasharray: 6 6;
+  animation: none;
+}
+.sectors-area {
+  animation: sectors-fade 900ms ease 300ms both;
+}
+@keyframes sectors-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes sectors-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Same height as the chart; the list (or the button) is pinned to the foot. */
+.sectors-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
 }
 .sectors-copy h3 {
-  margin-top: 1.75rem;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 64px;
   font-family: var(--font-lp-display), var(--font-lp-sans), sans-serif;
-  font-size: clamp(1.6rem, 2.6vw, 2.2rem);
+  font-size: 32px;
   font-weight: 500;
   letter-spacing: -0.02em;
 }
+.sectors-copy h3 svg {
+  width: 32px;
+  height: 32px;
+  stroke-width: 1.5;
+}
 .sectors-copy p {
-  max-width: 34rem;
-  margin-top: 0.75rem;
-  color: rgba(27, 49, 57, 0.72);
-  font-size: 1.08rem;
-  line-height: 1.5;
+  max-width: 480px;
+  margin-top: 24px;
+  color: var(--card-soft);
+  font-size: 18px;
+  line-height: 28px;
 }
 .sectors-copy ul {
-  display: grid;
-  gap: 0.6rem;
-  margin-top: 1.5rem;
+  align-self: stretch;
+  margin-top: auto;
   padding: 0;
+  border-top: 1px solid var(--card-line);
   list-style: none;
 }
 .sectors-copy li {
-  position: relative;
-  padding-left: 1.4rem;
-  font-size: 0.98rem;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 56px;
+  border-bottom: 1px solid var(--card-line);
+  font-size: 16px;
   font-weight: 500;
+}
+.sectors-copy li:last-child {
+  border-bottom-color: var(--card-ink);
 }
 .sectors-copy li::before {
   content: '';
-  position: absolute;
-  top: 0.55em;
-  left: 0;
+  flex: none;
   width: 8px;
   height: 8px;
-  background: #ff3621;
+  background: var(--accent);
 }
-.sectors-thread {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 0 22px 26px;
-  border: 1px solid rgba(27, 49, 57, 0.08);
-  border-radius: 14px;
-  background: #fff;
-  box-shadow: 0 24px 60px -30px rgba(27, 49, 57, 0.35);
-}
-.sectors-thread-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0 -22px 8px;
-  padding: 12px 16px;
-  border-bottom: 1px solid rgba(27, 49, 57, 0.08);
-}
-.sectors-thread-bar span {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: rgba(27, 49, 57, 0.16);
-}
-.sectors-thread-bar em {
-  margin-left: auto;
-  color: rgba(27, 49, 57, 0.5);
-  font-family: var(--font-lp-pixel), ui-monospace, monospace;
-  font-size: 13px;
-  font-style: normal;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.sectors-bubble {
-  max-width: 82%;
-  padding: 12px 16px;
-  border-radius: 16px;
-  font-size: 15px;
-  line-height: 1.45;
-  animation: sectors-in 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-.sectors-bubble.is-shopper {
-  align-self: flex-start;
-  border-bottom-left-radius: 4px;
-  background: #f1efec;
-}
-.sectors-bubble.is-agent {
-  align-self: flex-end;
-  border-bottom-right-radius: 4px;
-  background: #1b3139;
-  color: #fff;
-  animation-delay: 380ms;
-}
-@keyframes sectors-in {
-  from {
-    opacity: 0;
-    translate: 0 8px;
-  }
-}
-.sectors-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 2.4rem 4rem;
-  margin-top: clamp(3rem, 6vw, 4.5rem);
-  padding: 0;
-  list-style: none;
-  text-align: left;
-}
-@media (max-width: 720px) {
-  .sectors-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-.sectors-grid h4 {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  font-family: var(--font-lp-display), var(--font-lp-sans), sans-serif;
-  font-size: 1.5rem;
-  font-weight: 500;
-  letter-spacing: -0.015em;
-}
-.sectors-grid h4 svg {
-  width: 26px;
-  height: 26px;
-  stroke-width: 1.75;
-}
-.sectors-grid p {
-  max-width: 36rem;
-  margin-top: 0.7rem;
-  color: var(--band-soft);
-  font-size: 1.08rem;
-  line-height: 1.45;
+.sectors-contact {
+  margin-top: auto;
+  gap: 16px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .sectors-bubble {
+  .sectors-line,
+  .sectors-area {
     animation: none;
+  }
+  .sectors-tabs button::after {
+    transition: none;
   }
 }

@@ -1,103 +1,104 @@
 'use client';
 
-import { CarFront, DollarSign, Droplet, Plane, Store, Wifi, type LucideIcon } from 'lucide-react';
+import { Building2, CarFront, Droplet, Plane, Plus, Store, type LucideIcon } from 'lucide-react';
 import { useState } from 'react';
 
 /*
  * Where the agents sell -- the sectors we support (owner's direction, 24 Sep
- * 2026), in Databricks' "Data + AI platform" shape: an eyebrow, a headline,
- * a row of pill tabs, and one wide panel for the chosen tab. It continues
- * the logo strip's dark band, so the brand screen runs on under it.
- *
- * Each sector carries its own short conversation: what an agent actually
- * says in that business, which is the point the panel has to make.
+ * 2026). It continues the logo strip's dark band, so the brand screen runs
+ * on under it; only the card is cream. Our own shape, not Databricks' pill
+ * tabs: six equal cells in the header's pixel capitals, the chosen one lit,
+ * with a lava bar that sits on the card's top edge. Inside the
+ * card nothing is boxed: a chart of what the agent moves on the left, a
+ * short description on the right, and the description's last rule lands on
+ * the chart's baseline. "Others" says the list is not closed: a sector we
+ * do not list is composed on request.
  */
 
 type Sector = {
   readonly id: string;
   readonly name: string;
+  /** The tab's label: one word or two, so all six cells hold one line. */
+  readonly short: string;
   readonly icon: LucideIcon;
   readonly line: string;
-  readonly outcomes: readonly string[];
-  readonly thread: readonly { readonly who: 'shopper' | 'agent'; readonly text: string }[];
+  readonly points: readonly string[];
+  /** What the chart shows; illustrative. */
+  readonly metric: { readonly value: string; readonly label: string; readonly trend: readonly number[] };
 };
 
 const SECTORS: readonly Sector[] = [
   {
     id: 'retail',
     name: 'Retail & Ecommerce',
+    short: 'Retail',
     icon: Store,
-    line: 'From first click to repeat purchase, create experiences your customers will love.',
-    outcomes: ['Answers size, stock and delivery in the chat', 'Recovers carts with the product itself', 'Brings buyers back when it restocks'],
-    thread: [
-      { who: 'shopper', text: 'Do you have the black one in 38?' },
-      { who: 'agent', text: 'Yes, two left in 38. It runs small, so 38 fits like a 37. Add it?' },
-    ],
+    line: 'From first click to repeat purchase: the agent answers size, stock and delivery in the chat, and closes the order there.',
+    points: ['Fit advice from past returns', 'Carts recovered with the product itself', 'Buyers brought back on restock'],
+    metric: { value: '+23%', label: 'carts completed', trend: [12, 14, 13, 17, 16, 21, 20, 24, 27, 26, 31, 34] },
   },
   {
     id: 'beauty',
     name: 'Beauty & Cosmetics',
+    short: 'Beauty',
     icon: Droplet,
-    line: 'From skincare to self-care, engage customers with personalization, precision and style.',
-    outcomes: ['Matches shades and skin types', 'Builds routines from past orders', 'Reorders before the bottle runs out'],
-    thread: [
-      { who: 'shopper', text: 'Which serum works with oily skin?' },
-      { who: 'agent', text: 'The niacinamide one: light, no oils. You bought our cleanser in June, they pair well.' },
-    ],
-  },
-  {
-    id: 'finance',
-    name: 'Financial Services',
-    icon: DollarSign,
-    line: 'Build trust and loyalty with personalized experiences that increase engagement and retention.',
-    outcomes: ['Explains plans in plain words', 'Qualifies leads before an advisor calls', 'Keeps every answer on the approved script'],
-    thread: [
-      { who: 'shopper', text: 'What is the difference between the two cards?' },
-      { who: 'agent', text: 'Gold has no annual fee in year one and 2x points on travel. Want me to check eligibility?' },
-    ],
+    line: 'Shade matching, routines built from what they already use, and the reorder before the bottle runs out.',
+    points: ['Shades and skin types matched', 'Routines from past orders', 'Reorders on time'],
+    metric: { value: '2.4x', label: 'repeat orders', trend: [8, 9, 11, 10, 13, 15, 14, 18, 21, 22, 25, 28] },
   },
   {
     id: 'automotive',
     name: 'Automotive',
+    short: 'Automotive',
     icon: CarFront,
-    line: 'Connect the digital and showroom experience to accelerate engagement, leads, and retention.',
-    outcomes: ['Books test drives from the conversation', 'Compares trims and financing', 'Follows up after the showroom visit'],
-    thread: [
-      { who: 'shopper', text: 'Can I test drive the hybrid this weekend?' },
-      { who: 'agent', text: 'Saturday 11:00 or 14:30 at the Levent showroom. Which one should I hold for you?' },
-    ],
+    line: 'The showroom, open at night: trims and financing compared in the chat, and the test drive booked there.',
+    points: ['Test drives booked in the thread', 'Trims and financing compared', 'Follow-up after the visit'],
+    metric: { value: '3.1x', label: 'test drives booked', trend: [6, 7, 9, 8, 11, 12, 15, 14, 17, 19, 22, 24] },
   },
   {
     id: 'travel',
     name: 'Travel & Hospitality',
+    short: 'Travel',
     icon: Plane,
-    line: 'Inspire travelers, personalize the journey, boost bookings, and drive ancillary revenue.',
-    outcomes: ['Finds dates and rooms that fit', 'Offers upgrades at the right moment', 'Handles changes without a call center'],
-    thread: [
-      { who: 'shopper', text: 'Is there a sea view room for 12-15 July?' },
-      { who: 'agent', text: 'One left, with breakfast. Add airport transfer for 18 EUR and I will book both.' },
-    ],
+    line: 'Dates and rooms that fit, the upgrade offered at the right moment, and changes handled without a call.',
+    points: ['Availability answered live', 'Upgrades and extras offered', 'Changes without a call center'],
+    metric: { value: '+18%', label: 'ancillary revenue', trend: [14, 13, 16, 18, 17, 20, 23, 22, 25, 27, 29, 31] },
   },
   {
-    id: 'telecom',
-    name: 'Telecommunications',
-    icon: Wifi,
-    line: 'Reduce churn, boost loyalty, and personalize for every customer.',
-    outcomes: ['Spots customers about to leave', 'Offers the plan that fits their use', 'Solves line issues before a ticket'],
-    thread: [
-      { who: 'shopper', text: 'My bill went up again this month.' },
-      { who: 'agent', text: 'You used 40 GB on a 20 GB plan. The 50 GB plan costs less than this bill. Switch now?' },
-    ],
+    id: 'real-estate',
+    name: 'Real Estate',
+    short: 'Real Estate',
+    icon: Building2,
+    line: 'Every listing question answered in minutes, buyers qualified by budget and area, and viewings booked into the calendar.',
+    points: ['Listings matched to budget and area', 'Leads qualified before the call', 'Viewings booked in the chat'],
+    metric: { value: '+36%', label: 'viewings booked', trend: [9, 10, 10, 12, 14, 13, 16, 19, 18, 22, 24, 27] },
   },
 ];
 
+const CONTACT_URL = 'https://cal.com/halil-eren-pdniuc/30min';
+const OTHERS_ID = 'others';
+
+/** The trend as a line and an area under it, in a 600x280 box. */
+function chartPaths(values: readonly number[]) {
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  const span = max - min || 1;
+  const line = values
+    .map((value, index) => {
+      const x = (index / (values.length - 1)) * 600;
+      const y = 260 - ((value - min) / span) * 200;
+
+      return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`;
+    })
+    .join(' ');
+
+  return { line, area: `${line} L600 280 L0 280 Z` };
+}
+
 export function SectorShowcase() {
-  const [activeId, setActiveId] = useState(SECTORS[0]?.id ?? '');
-  const active = SECTORS.find(sector => sector.id === activeId) ?? SECTORS[0];
-
-  if (!active) return null;
-
-  const ActiveIcon = active.icon;
+  const [activeId, setActiveId] = useState(SECTORS[0]?.id ?? OTHERS_ID);
+  const active = SECTORS.find(sector => sector.id === activeId) ?? null;
+  const tabs = [...SECTORS.map(sector => ({ id: sector.id, name: sector.short })), { id: OTHERS_ID, name: 'Others' }];
 
   return (
     <section className="sectors" aria-labelledby="sectors-title">
@@ -109,72 +110,110 @@ export function SectorShowcase() {
       </h2>
 
       <div className="sectors-tabs" role="tablist" aria-label="Sectors">
-        {SECTORS.map(sector => (
+        {tabs.map((tab, index) => (
           <button
-            key={sector.id}
+            key={tab.id}
             type="button"
             role="tab"
-            id={`sector-tab-${sector.id}`}
-            aria-selected={sector.id === active.id}
+            id={`sector-tab-${tab.id}`}
+            aria-selected={tab.id === activeId}
             aria-controls="sector-panel"
-            className={sector.id === active.id ? 'is-active' : undefined}
-            onClick={() => setActiveId(sector.id)}
+            className={tab.id === activeId ? 'is-active' : undefined}
+            onClick={() => setActiveId(tab.id)}
           >
-            {sector.name}
+            <span>{String(index + 1).padStart(2, '0')}</span>
+            {tab.name}
           </button>
         ))}
       </div>
 
+      {/* keyed so the chart draws again when the sector changes */}
       <div
         className="sectors-panel"
         id="sector-panel"
         role="tabpanel"
-        aria-labelledby={`sector-tab-${active.id}`}
+        aria-labelledby={`sector-tab-${activeId}`}
+        key={activeId}
       >
-        <div className="sectors-copy">
-          <span className="sectors-icon" aria-hidden="true">
-            <ActiveIcon />
-          </span>
-          <h3>{active.name}</h3>
-          <p>{active.line}</p>
-          <ul>
-            {active.outcomes.map(outcome => (
-              <li key={outcome}>{outcome}</li>
-            ))}
-          </ul>
-        </div>
+        {active ? <SectorChart sector={active} /> : <OthersChart />}
 
-        {/* keyed so the thread replays when the sector changes */}
-        <div className="sectors-thread" key={active.id} aria-label={`An agent conversation in ${active.name}`}>
-          <div className="sectors-thread-bar">
-            <span />
-            <span />
-            <span />
-            <em>Sculptors agent</em>
-          </div>
-          {active.thread.map((message, index) => (
-            <p key={index} className={`sectors-bubble is-${message.who}`}>
-              {message.text}
-            </p>
-          ))}
+        <div className="sectors-copy">
+          {active ? (
+            <>
+              <h3>
+                <active.icon aria-hidden="true" />
+                {active.name}
+              </h3>
+              <p>{active.line}</p>
+              <ul>
+                {active.points.map(point => (
+                  <li key={point}>{point}</li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <>
+              <h3>
+                <Plus aria-hidden="true" />
+                Your sector
+              </h3>
+              <p>
+                Selling somewhere we have not listed? Every agent is composed from the same primitives, so we build
+                one for your business on request.
+              </p>
+              <a href={CONTACT_URL} target="_blank" rel="noopener noreferrer" className="btn-brand sectors-contact">
+                Get in touch
+                <span aria-hidden="true">›</span>
+              </a>
+            </>
+          )}
         </div>
       </div>
-
-      <ul className="sectors-grid">
-        {SECTORS.map(sector => {
-          const SectorIcon = sector.icon;
-
-          return (
-            <li key={sector.id}>
-              <h4>
-                <SectorIcon aria-hidden="true" />
-                {sector.name}
-              </h4>
-              <p>{sector.line}</p>
-            </li>
-          );
-        })}
-      </ul>
     </section>
+  );
+}
+
+function SectorChart({ sector }: { readonly sector: Sector }) {
+  const { line, area } = chartPaths(sector.metric.trend);
+
+  return (
+    <figure className="sectors-chart">
+      <figcaption>
+        <strong>{sector.metric.value}</strong>
+        <span>{sector.metric.label}, last 12 weeks</span>
+        <em>Illustrative</em>
+      </figcaption>
+      <svg viewBox="0 0 600 280" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id={`sectors-fill-${sector.id}`} x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stopColor="#ff3621" stopOpacity="0.32" />
+            <stop offset="1" stopColor="#ff3621" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {[70, 140, 210].map(y => (
+          <line key={y} x1="0" x2="600" y1={y} y2={y} className="sectors-grid-line" />
+        ))}
+        <path d={area} fill={`url(#sectors-fill-${sector.id})`} className="sectors-area" />
+        <path d={line} className="sectors-line" pathLength={1} />
+      </svg>
+    </figure>
+  );
+}
+
+/** Others: an empty chart waiting for a sector. */
+function OthersChart() {
+  return (
+    <figure className="sectors-chart is-empty">
+      <figcaption>
+        <strong>+</strong>
+        <span>your numbers, once your agent runs</span>
+      </figcaption>
+      <svg viewBox="0 0 600 280" preserveAspectRatio="none" aria-hidden="true">
+        {[70, 140, 210].map(y => (
+          <line key={y} x1="0" x2="600" y1={y} y2={y} className="sectors-grid-line" />
+        ))}
+        <path d="M0 250 L120 236 L240 220 L360 190 L480 160 L600 120" className="sectors-line is-dashed" />
+      </svg>
+    </figure>
   );
 }
