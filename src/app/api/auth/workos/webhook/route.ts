@@ -113,7 +113,21 @@ export const POST = definePublicRoute({
     }
 
     try {
-      await applyWebhookEvent(event);
+      const result = await applyWebhookEvent(event);
+
+      // Still marked processed, so WorkOS does not deliver it again forever,
+      // but the log says why the mirror did not change. Only the event's id
+      // and type and the reason: never a value from its data. An unknown
+      // user is expected (they are synced at their first sign-in); a
+      // malformed event is not.
+      if (!result.applied) {
+        logger[result.reason === 'malformed' ? 'warn' : 'info']('WorkOS webhook event not applied', {
+          eventId: event.id,
+          type: event.event,
+          reason: result.reason,
+        });
+      }
+
       await markWebhookEventProcessed(event.id);
     } catch (error) {
       logger.error('Failed to apply WorkOS webhook event', { error, eventId: event.id, type: event.event });

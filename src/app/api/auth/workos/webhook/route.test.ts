@@ -11,7 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * is a bad signature: an event that verified but cannot be read is a 500,
  * so WorkOS retries it, and it is logged as what it is. A client that cannot
  * be built is neither: it is a configuration error, answered 500 by the
- * route wrapper before any signature is checked.
+ * route wrapper before any signature is checked. An event that changed
+ * nothing is still marked processed, and the log says why.
  */
 
 const constructEvent = vi.fn();
@@ -20,11 +21,12 @@ const recordWebhookEvent = vi.fn();
 const applyWebhookEvent = vi.fn();
 const markWebhookEventProcessed = vi.fn();
 const markWebhookEventFailed = vi.fn();
+const info = vi.fn();
 const warn = vi.fn();
 const error = vi.fn();
 
 vi.mock('@/lib/logger', () => ({
-  logger: { warn, error, info: vi.fn(), debug: vi.fn() },
+  logger: { warn, error, info, debug: vi.fn() },
 }));
 vi.mock('@/lib/workos/client', () => ({ getWorkOSClient }));
 vi.mock('@/lib/workos/webhook-sync', () => ({
@@ -57,9 +59,10 @@ const BAD_SIGNATURE = new SignatureVerificationException(
 
 beforeEach(() => {
   process.env.WORKOS_WEBHOOK_SECRET = 'whsec_test';
-  for (const mock of [constructEvent, getWorkOSClient, recordWebhookEvent, applyWebhookEvent, markWebhookEventProcessed, markWebhookEventFailed, warn, error]) {
+  for (const mock of [constructEvent, getWorkOSClient, recordWebhookEvent, applyWebhookEvent, markWebhookEventProcessed, markWebhookEventFailed, info, warn, error]) {
     mock.mockReset();
   }
+  applyWebhookEvent.mockResolvedValue({ applied: true });
   markWebhookEventFailed.mockResolvedValue(undefined);
 });
 
@@ -168,6 +171,45 @@ describe('POST /api/auth/workos/webhook', () => {
     expect(await response.json()).toEqual({ received: true });
     expect(applyWebhookEvent).toHaveBeenCalledWith(EVENT);
     expect(markWebhookEventProcessed).toHaveBeenCalledWith('event_1');
+    expect(info).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('logs why an event changed nothing', async () => {
+    constructEvent.mockResolvedValue(EVENT);
+    recordWebhookEvent.mockResolvedValue('recorded');
+    applyWebhookEvent.mockResolvedValue({ applied: false, reason: 'unknown-user' });
+
+    const response = await POST(request({}, 'good'));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ received: true });
+    // Still processed, so WorkOS does not deliver it again forever.
+    expect(markWebhookEventProcessed).toHaveBeenCalledWith('event_1');
+    // Its id, type and reason, and nothing from its data.
+    expect(info).toHaveBeenCalledWith('WorkOS webhook event not applied', {
+      eventId: 'event_1',
+      type: 'organization.updated',
+      reason: 'unknown-user',
+    });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('warns about a malformed event, and still marks it processed', async () => {
+    constructEvent.mockResolvedValue(EVENT);
+    recordWebhookEvent.mockResolvedValue('recorded');
+    applyWebhookEvent.mockResolvedValue({ applied: false, reason: 'malformed' });
+
+    const response = await POST(request({}, 'good'));
+
+    expect(response.status).toBe(200);
+    expect(markWebhookEventProcessed).toHaveBeenCalledWith('event_1');
+    expect(warn).toHaveBeenCalledWith('WorkOS webhook event not applied', {
+      eventId: 'event_1',
+      type: 'organization.updated',
+      reason: 'malformed',
+    });
+    expect(info).not.toHaveBeenCalled();
   });
 
   it('applies again a redelivery of an event whose earlier apply failed', async () => {

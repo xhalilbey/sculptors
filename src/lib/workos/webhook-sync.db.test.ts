@@ -74,13 +74,15 @@ describe('applyWebhookEvent', () => {
   });
 
   it('mirrors a membership for a known user, creating a placeholder organization', async () => {
-    await applyWebhookEvent(
+    const created = await applyWebhookEvent(
       event(
         'organization_membership.created',
         'e5',
         membership({ id: 'om_W1', organizationId: 'org_W3', userId: 'user_known', role: 'admin' })
       )
     );
+
+    expect(created).toEqual({ applied: true });
 
     expect(await one(sql`select role, status from organization_memberships where id = 'om_W1'`)).toEqual({
       role: 'admin',
@@ -108,19 +110,45 @@ describe('applyWebhookEvent', () => {
   });
 
   it('ignores a membership for a user it has never seen, and malformed ids', async () => {
-    await applyWebhookEvent(
+    const unknownUser = await applyWebhookEvent(
       event('organization_membership.created', 'e7', membership({ id: 'om_W2', organizationId: 'org_W4', userId: 'user_unknown' }))
     );
-    await applyWebhookEvent(
+    const malformedMembership = await applyWebhookEvent(
       event(
         'organization_membership.created',
         'e8',
         membership({ id: 'not_a_membership', organizationId: 'org_W4', userId: 'user_known' })
       )
     );
+    const malformedOrganization = await applyWebhookEvent(
+      event('organization.updated', 'e8b', organization({ id: 'not_an_organization', name: 'Nobody' }))
+    );
 
+    // Each says why it changed nothing, for the route to log.
+    expect(unknownUser).toEqual({ applied: false, reason: 'unknown-user' });
+    expect(malformedMembership).toEqual({ applied: false, reason: 'malformed' });
+    expect(malformedOrganization).toEqual({ applied: false, reason: 'malformed' });
     expect(await one(sql`select count(*)::int as n from organization_memberships where organization_id = 'org_W4'`)).toEqual({ n: 0 });
-    expect(await one(sql`select count(*)::int as n from organizations where id = 'org_W4'`)).toEqual({ n: 0 });
+    expect(await one(sql`select count(*)::int as n from organizations where id in ('org_W4', 'not_an_organization')`)).toEqual({ n: 0 });
+  });
+
+  it('says it does not act on an event it is not built for', async () => {
+    const session = event('session.created', 'e8c', {
+      object: 'session',
+      id: 'session_W1',
+      userId: 'user_known',
+      ipAddress: '203.0.113.7',
+      userAgent: 'Mozilla/5.0',
+      organizationId: 'org_W4',
+      authMethod: 'password',
+      status: 'active',
+      expiresAt: AT,
+      endedAt: null,
+      createdAt: AT,
+      updatedAt: AT,
+    });
+
+    expect(await applyWebhookEvent(session)).toEqual({ applied: false, reason: 'not-handled' });
   });
 
   it('updates a profile without letting null erase it, and deactivates on delete', async () => {
