@@ -823,3 +823,40 @@ The owner asked for better type, like Groq's, and singled out Groq's nav
   as Groq's are; the hero's tracking opened from -0.06em to -0.045em.
 - **Not done here**: the app itself (dashboard, auth) still falls through
   to the system font for the same reason.
+
+## 2026-09-24 — Production logs are written by level, and the build keeps them
+
+**Decision.** `next.config.ts` no longer sets `compiler.removeConsole`. The
+logger's production branch (`src/lib/logger.ts`) writes one JSON object per
+line through the console method of its level: errors through
+`console.error` and warnings through `console.warn` (stderr), info through
+`console.log` (stdout). Each line carries `severity` (`DEBUG`, `INFO`,
+`WARNING`, `ERROR`, the names Cloud Logging reads) beside the old `level`,
+and the logger's own keys (`timestamp`, `severity`, `level`, `message`)
+are written after the context, so a context key cannot forge them. In the
+browser bundle, production info and debug lines return early; errors and
+warnings reach the visitor's console.
+
+**Why.** removeConsole stripped every `console.log` from production builds
+except `error` and `warn`, and the logger wrote every level, errors
+included, with `console.log`. The built server chunk read
+`if(this.isProduction)({timestamp:...,...r});else{...}`: the call was gone,
+so route 500s, webhook apply failures, access denials and sign-in failures
+logged nothing in production. The unit tests could not see it, because
+Vitest never runs Next's compiler. The lint rule `no-console` (allowing
+only `warn` and `error`, under `--max-warnings 0`) already keeps stray
+`console.log` out of the source, so the build transform guarded nothing the
+linter does not. Rejected: keeping removeConsole and widening its `exclude`
+to `log` (or `info`), which leaves a setting whose only effect is a trap
+for the next person who routes a line through another method; and
+`process.stdout.write`, which does not exist in the browser bundle.
+
+**Consequence.** Server logs appear in production for the first time, so
+redaction now matters (the camelCase keys are a separate fix).
+`src/next-config.test.ts` fails if removeConsole comes back, and
+`logger.test.ts` pins the method and severity per level. The browser was
+silent before; its console now shows sanitized errors and warnings, on
+purpose, while info lines (user and organization ids from the auth and
+organization contexts) stay out of it. `define-route.ts` logs a 4xx
+AppError's text under `reason`, since a context `message` no longer
+replaces the line's own.

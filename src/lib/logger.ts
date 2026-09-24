@@ -89,10 +89,22 @@ function serializeError(error: Error, includeStack: boolean): LogContext {
   };
 }
 
+/**
+ * Cloud Logging's LogSeverity for each level, spelled out: upper-casing
+ * would give 'WARN', which is not a severity Cloud Logging knows.
+ */
+const SEVERITY = {
+  debug: 'DEBUG',
+  info: 'INFO',
+  warn: 'WARNING',
+  error: 'ERROR',
+} as const satisfies Record<LogLevel, string>;
+
 class Logger {
   private isDevelopment = process.env.NODE_ENV === 'development';
   private isTest = process.env.NODE_ENV === 'test';
   private isProduction = process.env.NODE_ENV === 'production';
+  private isBrowser = typeof window !== 'undefined';
 
   /**
    * Sanitize context object to remove/mask sensitive data
@@ -138,34 +150,59 @@ class Logger {
   }
 
   /**
-   * Format log message for output
+   * Format a readable development line. The context arrives already
+   * sanitized: output() sanitizes once for both branches.
    */
-  private formatMessage(level: LogLevel, message: string, context?: LogContext): string {
+  private formatMessage(level: LogLevel, message: string, sanitizedContext?: LogContext): string {
     const timestamp = new Date().toISOString();
-    const sanitizedContext = this.sanitizeContext(context);
     const contextStr = sanitizedContext ? ` ${JSON.stringify(sanitizedContext)}` : '';
 
     return `[${timestamp}] [${level.toUpperCase()}] ${message}${contextStr}`;
   }
 
   /**
-   * Output log (structured in production, console in development)
+   * Output log (one JSON object per line in production, a readable line in
+   * development and tests)
    */
   private output(level: LogLevel, message: string, context?: LogContext): void {
+    // This file is also bundled for the browser. Its production console was
+    // silent until 24 Sep 2026, because the build stripped the console.log
+    // every level used. Errors and warnings now reach it on purpose; info
+    // lines, which carry user and organization ids, stay quiet.
+    if (this.isProduction && this.isBrowser && (level === 'info' || level === 'debug')) {
+      return;
+    }
+
     const sanitizedContext = this.sanitizeContext(context);
 
     if (this.isProduction) {
-      // Structured JSON logging for production (CloudWatch, etc.)
-      const logEntry = {
+      // Cloud Run hands every line written to stdout or stderr to Cloud
+      // Logging, which parses one JSON object per line and files it by
+      // `severity` (`level` stays for anything that already reads it). The
+      // fixed keys go last, so a context key cannot forge them.
+      const line = JSON.stringify({
+        ...sanitizedContext,
         timestamp: new Date().toISOString(),
+        severity: SEVERITY[level],
         level,
         message,
-        ...sanitizedContext,
-      };
+      });
 
-      console.log(JSON.stringify(logEntry));
+      // Errors and warnings go to stderr. Every level used to go through
+      // console.log, which next.config's removeConsole compiled away, so
+      // production wrote nothing at all.
+      switch (level) {
+        case 'error':
+          console.error(line);
+          break;
+        case 'warn':
+          console.warn(line);
+          break;
+        default:
+          console.log(line);
+      }
     } else {
-      // Colored console output for development
+      // Readable lines for development and tests
       const formattedMessage = this.formatMessage(level, message, sanitizedContext);
 
       switch (level) {

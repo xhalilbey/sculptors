@@ -325,7 +325,7 @@ function handleError(
   if (status >= 500) {
     logger.error('Unhandled route error', err, { requestId, ...trace });
   } else {
-    logger.warn('Route error', { requestId, ...trace, status, message: err.message });
+    logger.warn('Route error', { requestId, ...trace, status, reason: err.message });
   }
 
   // formatErrorResponse sanitizes the message; raw error text never reaches the client.

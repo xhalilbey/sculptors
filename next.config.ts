@@ -18,12 +18,10 @@ const nextConfig: NextConfig = {
   // lucide-react is not listed in experimental.optimizePackageImports: Next
   // already optimizes it by default (next/dist/server/config.js).
 
-  compiler: {
-    // Remove console logs in production
-    removeConsole: process.env.NODE_ENV === 'production' ? {
-      exclude: ['error', 'warn'],
-    } : false,
-  },
+  // No compiler.removeConsole: src/lib/logger.ts writes every production
+  // line through console, and stripping console.log silenced all of them
+  // until 24 Sep 2026. The no-console lint rule keeps stray calls out
+  // instead (src/next-config.test.ts pins this).
 
   // Image optimization
   images: {
