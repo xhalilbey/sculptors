@@ -36,8 +36,8 @@ export function toApiRequestError(response: Response, body: unknown, fallback: s
  * server's message, or `failure` when the body has none. `signal` goes to
  * fetch as given, so an abort before the answer arrives rejects with the
  * browser's own AbortError. Commerce kept this as a private helper while
- * metrics and System Health wrote the same lines out by hand; it now lives
- * here once (24 Sep 2026).
+ * metrics, System Health and the organizations list wrote the same lines
+ * out by hand; it now lives here once (24 Sep 2026).
  */
 export async function getJson(
   path: string,

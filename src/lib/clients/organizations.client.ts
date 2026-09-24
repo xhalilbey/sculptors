@@ -3,7 +3,7 @@ import {
   organizationResponseSchema,
 } from '@/lib/validations/organizations.schema';
 import type { OrganizationDto } from '@/types/api';
-import { readJson, toApiRequestError } from './api-error';
+import { getJson, readJson, toApiRequestError } from './api-error';
 
 /**
  * Browser calls to /api/organizations. Every response is parsed with the
@@ -12,14 +12,7 @@ import { readJson, toApiRequestError } from './api-error';
  */
 
 export async function listOrganizations(signal?: AbortSignal): Promise<OrganizationDto[]> {
-  const response = await fetch('/api/organizations', {
-    credentials: 'include',
-    cache: 'no-store',
-    signal,
-  });
-  const body = await readJson(response);
-
-  if (!response.ok) throw toApiRequestError(response, body, 'Failed to load organizations');
+  const body = await getJson('/api/organizations', 'Failed to load organizations', signal);
 
   return organizationListResponseSchema.parse(body).organizations;
 }
