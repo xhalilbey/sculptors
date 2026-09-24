@@ -2,6 +2,7 @@ import 'server-only';
 
 import { eq, sql } from 'drizzle-orm';
 import { organizations, type OrganizationRow } from '@/db/schema';
+import { UNSAFE_NAME_CHARACTERS } from '@/lib/validations/organizations.schema';
 import type { OrganizationId, UserId } from '@/types/ids';
 import { unwrap, type IdentityDb } from '../internal/handle';
 import { fromProposedIfNotOlder, laterStamp, proposedIsNotOlder, storedIsNotNewer } from './mirror-order';
@@ -9,18 +10,26 @@ import { fromProposedIfNotOlder, laterStamp, proposedIsNotOlder, storedIsNotNewe
 /** The CHECK on organizations.name: char_length, in code points. */
 const NAME_LIMIT = 100;
 
+/** UNSAFE_NAME_CHARACTERS with the global flag, so a replace drops every one. */
+const ALL_UNSAFE_NAME_CHARACTERS = new RegExp(UNSAFE_NAME_CHARACTERS, 'gu');
+
 /**
- * A name as this table can hold it. WorkOS accepts names this table cannot
- * hold -- a NUL, which Postgres text refuses, or more than 100 code points,
- * which the CHECK refuses -- whether they come from its dashboard, its API
- * or a default we generated. One such name used to fail every sign-in sync
- * and every webhook retry for its members. Control characters are dropped,
- * the rest is cut to the first 100 code points, and a name left empty
- * becomes the id, like a placeholder's. WorkOS keeps the full name; the
- * mirror is only a copy of it.
+ * A name as this table can hold it, in characters the request schema
+ * accepts. WorkOS accepts names this table cannot hold -- a NUL, which
+ * Postgres text refuses, or more than 100 code points, which the CHECK
+ * refuses -- whether they come from its dashboard, its API or a default we
+ * generated. One such name used to fail every sign-in sync and every
+ * webhook retry for its members. The characters organizationNameSchema
+ * refuses (control characters, bidi marks, line and paragraph separators)
+ * are dropped, the rest is cut to the first 100 code points, and a name
+ * left empty becomes the id, like a placeholder's. Until 24 Sep only the
+ * control characters were dropped, so the setup screen could prefill a
+ * WorkOS name holding a bidi mark and have it refused when sent back, as
+ * 'Invalid request' with an invisible cause. WorkOS keeps the full name;
+ * the mirror is only a copy of it.
  */
 function mirroredName(name: string, id: OrganizationId): string {
-  const cleaned = name.replace(/\p{Cc}/gu, '').trim();
+  const cleaned = name.replace(ALL_UNSAFE_NAME_CHARACTERS, '').trim();
 
   return Array.from(cleaned || id)
     .slice(0, NAME_LIMIT)

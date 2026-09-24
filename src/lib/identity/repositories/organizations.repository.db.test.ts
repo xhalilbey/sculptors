@@ -2,6 +2,7 @@ import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { organizations as organizationsTable } from '@/db/schema';
 import { createTestDb, type TestDb } from '@/db/testing/pglite';
+import { organizationNameSchema } from '@/lib/validations';
 import { wrap, type IdentityDb } from '../internal/handle';
 import { org, seedUser } from '../testing.test-utils';
 import * as organizations from './organizations.repository';
@@ -60,6 +61,23 @@ describe('organizations.upsertNames', () => {
 
     expect((await read('org_nul'))?.name).toBe('Acme Ltd');
     expect((await read('org_150'))?.name).toBe('\u{1F600}'.repeat(100));
+  });
+
+  it('drops every character the request schema refuses, so the setup screen can send the name back', async () => {
+    // The bidi marks, embeddings, overrides and isolates, and the line and
+    // paragraph separators. The mirror used to keep them, and the rename
+    // route then refused the name it had prefilled. The ZWJ stays, as the
+    // schema allows it.
+    const refused = '\u{61C}\u{200E}\u{200F}\u{202A}\u{202B}\u{202C}\u{202D}\u{202E}\u{2066}\u{2067}\u{2068}\u{2069}\u{2028}\u{2029}';
+
+    await organizations.upsertNames(db, [
+      { id: org('org_marks'), name: `Acme${refused} \u{1F469}\u{200D}\u{1F4BB} Ltd\u{200F}`, workosUpdatedAt: T0 },
+    ]);
+
+    const name = String((await read('org_marks'))?.name);
+
+    expect(name).toBe('Acme \u{1F469}\u{200D}\u{1F4BB} Ltd');
+    expect(organizationNameSchema.parse(name)).toBe(name);
   });
 });
 
