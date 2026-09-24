@@ -11,6 +11,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
  * `next dev` must not write agent files into the tree. From 16.3 it creates
  * AGENTS.md and CLAUDE.md when it detects an AI coding agent, unless
  * agentRules is false.
+ *
+ * Every page sends the static security policy: a CSP that holds no
+ * script-src (a nonce would force dynamic rendering), a Permissions-Policy
+ * and COOP. Until 24 Sep 2026 no page sent any of them, while two comments
+ * said a CSP was in place.
  */
 
 afterEach(() => {
@@ -34,5 +39,24 @@ describe('next.config', () => {
     const { default: config } = await import('../next.config');
 
     expect(config.agentRules).toBe(false);
+  });
+
+  it('sends the static page policy', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.resetModules();
+
+    const { default: config } = await import('../next.config');
+    const routes = (await config.headers?.()) ?? [];
+    const page = routes.find(route => route.source === '/:path*');
+    const headers = new Map(page?.headers.map(header => [header.key, header.value]));
+
+    expect(headers.get('Content-Security-Policy')).toBe(
+      "frame-ancestors 'self'; base-uri 'self'; object-src 'none'; form-action 'self'"
+    );
+    expect(headers.get('Permissions-Policy')).toBe(
+      'camera=(), microphone=(), geolocation=(), payment=(), usb=()'
+    );
+    expect(headers.get('Cross-Origin-Opener-Policy')).toBe('same-origin');
+    expect(headers.get('X-Frame-Options')).toBe('SAMEORIGIN');
   });
 });

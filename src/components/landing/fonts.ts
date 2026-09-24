@@ -16,7 +16,8 @@ import { Bitcount_Grid_Single, Figtree } from 'next/font/google';
  * VF", which is not loaded anywhere, and it fell through to the system font.
  *
  * next/font serves both from this origin, so no request leaves for Google at
- * runtime (and a font-src 'self' policy holds).
+ * runtime (and a font-src 'self' policy would hold; the page CSP in
+ * next.config.ts sets no font-src yet).
  */
 export const landingSans = Figtree({
   subsets: ['latin', 'latin-ext'],

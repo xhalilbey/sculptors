@@ -1185,3 +1185,52 @@ identity table fails as the app role; a new repository function gets its
 app-role run in `app-role.db.test.ts`. The production project's role already exists (created 23 Sep with
 the earlier runbook); the new steps apply to a new project, and `\password`
 alone rotates the password.
+
+## 2026-09-24 — Pages send a static security policy, without script-src
+
+**Decision.** Every path (`/:path*` in `next.config.ts` `headers()`) now
+sends three more headers: `Content-Security-Policy: frame-ancestors 'self';
+base-uri 'self'; object-src 'none'; form-action 'self'`,
+`Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(),
+usb=()` and `Cross-Origin-Opener-Policy: same-origin`. Every header that
+was already sent stays, `X-Frame-Options: SAMEORIGIN` included for
+browsers that predate `frame-ancestors`. `/_next/image` keeps its own
+sandboxed policy (`images.contentSecurityPolicy`): the optimizer sets it on
+its response after the config headers, so it replaces the page policy
+there, which a production build confirmed. The comments in
+`sidebar.tsx` and `landing/fonts.ts` that spoke of a CSP `img-src` and a
+`font-src 'self'` policy as if they existed now say that neither is set
+yet.
+
+**Why.** No page sent a CSP, a Permissions-Policy or COOP, and two
+comments claimed a policy that was not there. These directives cannot
+change what a page renders or loads, so they fit the static landing and
+the `cacheComponents` shells as they are. `form-action 'self'` was checked
+against every form: each one submits through a JS `onSubmit` that calls
+`preventDefault`, no `<form>` has an `action`, the WorkOS sign-in hop is a
+`window.location` navigation, and logout is reached by navigation, not a
+form post, and redirects to this origin. No flow uses `window.opener`:
+sign-in is a top-level redirect, not a popup, and external links carry
+`rel="noopener noreferrer"`. No page uses the camera, microphone, location,
+payments or USB. Rejected: a nonce-based `script-src`. A per-request nonce
+forces every page to render dynamically, which `cacheComponents` and the
+static landing rule out. Rejected for now: a static `script-src`,
+`style-src` and `img-src`. Next streams its RSC payload in inline scripts
+and the pages use inline `style` attributes, so both would need
+`'unsafe-inline'` and protect little, and `img-src` would have to list
+every avatar host (Google, GitHub, WorkOS), since avatars load straight
+from the provider.
+
+**Consequence.** Other sites cannot frame the app, inject a `<base>`,
+embed plugins or post a form of ours elsewhere, and a cross-origin page
+that opens the app, or that the app opens, gets no handle on its window
+(`window.opener` is severed both ways). Script injection
+is not yet contained by CSP. The next step is `script-src` with hashes
+(Next's `experimental.sri`), which needs no nonce; an `img-src` that
+lists the avatar hosts belongs with it, and an avatar on a host it does
+not list falls back to the initial through `onFailed`. A cross-origin
+form post or a popup sign-in flow would need this policy changed first.
+`src/next-config.test.ts` pins the three values and `X-Frame-Options`.
+A production build was checked in Chromium: the landing (fonts, hero
+images, the theme switch) and `/auth/login` report no policy violation,
+and `/_next/image` still serves under its own policy.

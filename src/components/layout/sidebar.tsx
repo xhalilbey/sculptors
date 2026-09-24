@@ -142,7 +142,9 @@ type AvatarProps = {
  * image optimizer never fetches or transcodes user-supplied bytes, and no
  * images.remotePatterns entry opens it to do so -- with no Referer, so the
  * host does not learn which app page showed it. A 36px avatar gains nothing
- * from optimization. The hosts are allowed by CSP img-src instead.
+ * from optimization. No page CSP sets img-src yet (next.config.ts); one that
+ * does must list the provider hosts (Google, GitHub, WorkOS), or avatars
+ * fall back to the initial through onFailed.
  */
 export function AvatarFace({
   avatarUrl,
