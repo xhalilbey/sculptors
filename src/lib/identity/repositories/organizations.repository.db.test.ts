@@ -1,5 +1,6 @@
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { organizations as organizationsTable } from '@/db/schema';
 import { createTestDb, type TestDb } from '@/db/testing/pglite';
 import { wrap, type IdentityDb } from '../internal/handle';
 import { org, seedUser } from '../testing.test-utils';
@@ -10,6 +11,9 @@ let t: TestDb;
 let db: IdentityDb;
 /** Every write here comes from the same WorkOS moment unless a test says otherwise. */
 const T0 = new Date('2026-09-01T00:00:00Z');
+/** Two later WorkOS moments, for writes that land out of order. */
+const T1 = new Date('2026-09-02T00:00:00Z');
+const T2 = new Date('2026-09-03T00:00:00Z');
 
 beforeAll(async () => {
   t = await createTestDb();
@@ -24,6 +28,13 @@ async function read(id: string) {
   const result = await t.db.execute<Record<string, unknown>>(sql`select * from organizations where id = ${id}`);
 
   return result.rows[0];
+}
+
+/** The stored row as Drizzle maps it, so its WorkOS times read back as Dates. */
+async function stored(id: string) {
+  const [row] = await t.db.select().from(organizationsTable).where(eq(organizationsTable.id, org(id)));
+
+  return row;
 }
 
 describe('organizations.upsertNames', () => {
@@ -98,6 +109,50 @@ describe('organizations.markDeleted and update', () => {
     expect(row?.deleted_at).not.toBeNull();
   });
 
+  it('writes only the deletion over a known organization', async () => {
+    const creator = await seedUser(db);
+
+    await organizations.upsertCreated(db, {
+      id: org('org_known'),
+      name: 'Known',
+      plan: 'pro',
+      region: 'us-east-1',
+      createdBy: creator,
+      workosUpdatedAt: T0,
+    });
+    await organizations.markDeleted(db, org('org_known'), T1);
+
+    expect(await stored('org_known')).toMatchObject({
+      name: 'Known',
+      plan: 'pro',
+      region: 'us-east-1',
+      createdBy: creator,
+      status: 'deleted',
+      deletedAt: T1,
+      workosUpdatedAt: T1,
+    });
+  });
+
+  it('ignores a deletion older than the stored state', async () => {
+    await organizations.upsertNames(db, [{ id: org('org_newer'), name: 'Newer', workosUpdatedAt: T2 }]);
+    await organizations.markDeleted(db, org('org_newer'), T1);
+
+    expect(await stored('org_newer')).toMatchObject({ status: 'active', deletedAt: null, workosUpdatedAt: T2 });
+  });
+
+  it('leaves a tombstone for an organization deleted before it was seen', async () => {
+    await organizations.markDeleted(db, org('org_unseen'), T2);
+    // The 'created' event WorkOS sent at t1, delivered after the deletion.
+    await organizations.upsertNames(db, [{ id: org('org_unseen'), name: 'Late', workosUpdatedAt: T1 }]);
+
+    expect(await stored('org_unseen')).toMatchObject({
+      name: 'org_unseen',
+      status: 'deleted',
+      deletedAt: T2,
+      workosUpdatedAt: T2,
+    });
+  });
+
   it('returns the updated row, or null when there is none', async () => {
     await organizations.upsertNames(db, [{ id: org('org_upd'), name: 'Before', workosUpdatedAt: T0 }]);
 
@@ -110,6 +165,41 @@ describe('organizations.markDeleted and update', () => {
     expect(updated).toMatchObject({ id: 'org_upd', name: 'After' });
     expect(updated?.onboardingCompletedAt?.toISOString()).toBe(at.toISOString());
     expect(await organizations.update(db, org('org_missing'), { name: 'X' })).toBeNull();
+  });
+
+  it('renames and moves the stamp forward with a rename no older than the stored state', async () => {
+    await organizations.upsertNames(db, [{ id: org('org_fresh'), name: 'Y', workosUpdatedAt: T1 }]);
+
+    await expect(organizations.update(db, org('org_fresh'), { name: 'X' }, T2)).resolves.toMatchObject({
+      name: 'X',
+      workosUpdatedAt: T2,
+    });
+  });
+
+  it('keeps a newer name when an older rename lands', async () => {
+    // A webhook mirrored WorkOS's state at t2 before the rename WorkOS
+    // answered at t1 was written here.
+    await organizations.upsertNames(db, [{ id: org('org_stale'), name: 'Y', workosUpdatedAt: T2 }]);
+
+    await expect(organizations.update(db, org('org_stale'), { name: 'X' }, T1)).resolves.toMatchObject({
+      name: 'Y',
+      workosUpdatedAt: T2,
+    });
+    expect(await stored('org_stale')).toMatchObject({ name: 'Y', workosUpdatedAt: T2 });
+  });
+
+  it('still writes onboarding with a stale rename', async () => {
+    await organizations.upsertNames(db, [{ id: org('org_staleOnboarding'), name: 'Y', workosUpdatedAt: T2 }]);
+
+    const at = new Date('2026-09-23T10:00:00.000Z');
+    const updated = await organizations.update(
+      db,
+      org('org_staleOnboarding'),
+      { name: 'X', onboardingCompletedAt: at },
+      T1
+    );
+
+    expect(updated).toMatchObject({ name: 'Y', workosUpdatedAt: T2, onboardingCompletedAt: at });
   });
 
   it('lets the database refuse what the checks forbid', async () => {

@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { and, eq, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { organizations, type OrganizationRow } from '@/db/schema';
 import type { OrganizationId, UserId } from '@/types/ids';
 import { unwrap, type IdentityDb } from '../internal/handle';
@@ -105,14 +105,29 @@ export async function upsertCreated(
  * Soft delete: memberships and history survive, the organization stops being
  * listed. `at` is when WorkOS deleted it; the stamp makes a late 'updated'
  * event from before the deletion lose.
+ *
+ * An organization not mirrored yet gets a tombstone, named after its id like
+ * a placeholder. This used to be a plain UPDATE, which wrote nothing for an
+ * organization we had not seen, so a 'created' or 'updated' event delivered
+ * after the deletion inserted it as active. A known organization only has
+ * its status, deletion time and stamp written: its name, plan, region and
+ * creator are left as they are.
  */
 export async function markDeleted(handle: IdentityDb, id: OrganizationId, at: Date): Promise<void> {
   const db = unwrap(handle);
 
   await db
-    .update(organizations)
-    .set({ status: 'deleted', deletedAt: at, workosUpdatedAt: at })
-    .where(and(eq(organizations.id, id), storedIsNotNewer(organizations.workosUpdatedAt, at)));
+    .insert(organizations)
+    .values({ id, name: mirroredName(id, id), status: 'deleted', deletedAt: at, workosUpdatedAt: at })
+    .onConflictDoUpdate({
+      target: organizations.id,
+      set: {
+        status: sql`excluded.status`,
+        deletedAt: sql`excluded.deleted_at`,
+        workosUpdatedAt: sql`excluded.workos_updated_at`,
+      },
+      where: proposedIsNotOlder('organizations'),
+    });
 }
 
 export type OrganizationPatch = Partial<Pick<OrganizationRow, 'name' | 'onboardingCompletedAt'>>;
@@ -121,6 +136,15 @@ export type OrganizationPatch = Partial<Pick<OrganizationRow, 'name' | 'onboardi
  * Returns the updated row, or null when there is no such organization.
  * `workosUpdatedAt` is the WorkOS organization's updatedAt after a rename
  * made there, so an older webhook does not put the old name back.
+ *
+ * The rename keeps the same clock. A webhook carrying a newer WorkOS state
+ * can land between WorkOS answering the rename and this write; the name
+ * used to be written regardless, putting the older name back and moving the
+ * stamp backwards. Now the name is written only when the stored state is
+ * not newer, and the stamp only ever moves forward. The guard sits in SET,
+ * not WHERE: onboarding is ours alone and is written either way, and the
+ * row is still returned. A guard in WHERE would drop the onboarding write
+ * too and return null, which the route reads as "no such organization".
  */
 export async function update(
   handle: IdentityDb,
@@ -136,9 +160,24 @@ export async function update(
 
   const [row] = await db
     .update(organizations)
-    .set(workosUpdatedAt ? { ...patch, workosUpdatedAt } : patch)
+    .set(workosUpdatedAt ? { ...patch, ...byWorkOSClock(patch.name, workosUpdatedAt) } : patch)
     .where(eq(organizations.id, id))
     .returning();
 
   return row ?? null;
+}
+
+/**
+ * The WorkOS half of a rename WorkOS answered at `at`: the name only when
+ * the stored state is not newer (mirror-order.ts), and the later stamp.
+ */
+function byWorkOSClock(name: string | undefined, at: Date) {
+  // Bound through the column, as storedIsNotNewer binds its comparison.
+  const workosUpdatedAt = sql`greatest(${organizations.workosUpdatedAt}, ${sql.param(at, organizations.workosUpdatedAt)})`;
+
+  if (name === undefined) return { workosUpdatedAt };
+
+  const applies = storedIsNotNewer(organizations.workosUpdatedAt, at);
+
+  return { name: sql`case when ${applies} then ${name} else ${organizations.name} end`, workosUpdatedAt };
 }
