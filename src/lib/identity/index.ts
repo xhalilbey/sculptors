@@ -56,7 +56,6 @@ export {
   isUserId,
   parseMembershipId,
   parseOrganizationId,
-  parseUserId,
   type OrganizationId,
   type UserId,
 } from '@/types/ids';
