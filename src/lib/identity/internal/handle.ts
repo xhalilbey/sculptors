@@ -6,7 +6,7 @@ import type { DbExecutor } from '@/db/client';
  * The handle services pass to identity repositories: the pool or an open
  * transaction, sealed so that only a repository can use it.
  *
- * Services (lib/workos, lib/auth, lib/security) hold an IdentityDb so that
+ * Services (lib/workos, lib/auth) hold an IdentityDb so that
  * several repository calls can share one transaction. Before this it was
  * the Drizzle executor itself, so `identityDb().execute(sql`...`)` or
  * `.select()` compiled anywhere the barrel was imported, and the "only

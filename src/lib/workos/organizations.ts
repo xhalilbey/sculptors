@@ -42,9 +42,6 @@ import { getWorkOSClient } from './client';
 
 export const OWNER_ROLE_SLUG = 'admin';
 
-const DEFAULT_REGION = 'eu-central-1';
-const DEFAULT_PLAN = 'free';
-
 export type { MirroredMembership };
 
 type WorkOSMembership = Pick<
@@ -171,8 +168,6 @@ export async function createOrganizationForUser(input: {
       await organizationsRepository.upsertCreated(tx, {
         id: organizationId,
         name: organization.name,
-        plan: DEFAULT_PLAN,
-        region: DEFAULT_REGION,
         createdBy: input.userId,
         workosUpdatedAt: new Date(organization.updatedAt),
       });

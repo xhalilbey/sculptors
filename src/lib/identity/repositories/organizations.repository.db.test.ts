@@ -88,13 +88,24 @@ describe('organizations.upsertCreated', () => {
     await organizations.upsertCreated(db, {
       id: org('org_created'),
       name: 'Acme',
-      plan: 'free',
-      region: 'eu-central-1',
       createdBy: creator,
       workosUpdatedAt: T0,
     });
 
     expect(await read('org_created')).toMatchObject({ name: 'Acme', created_by: creator });
+  });
+
+  it('leaves plan and region to the schema defaults and keeps stored ones', async () => {
+    const creator = await seedUser(db);
+    const created = { id: org('org_planned'), name: 'Planned', createdBy: creator, workosUpdatedAt: T0 };
+
+    await organizations.upsertCreated(db, created);
+    expect(await read('org_planned')).toMatchObject({ plan: 'free', region: 'eu-central-1' });
+
+    await t.db.execute(sql`update organizations set plan = 'pro', region = 'us-east-1' where id = 'org_planned'`);
+    await organizations.upsertCreated(db, created);
+
+    expect(await read('org_planned')).toMatchObject({ plan: 'pro', region: 'us-east-1' });
   });
 });
 
@@ -115,11 +126,11 @@ describe('organizations.markDeleted and update', () => {
     await organizations.upsertCreated(db, {
       id: org('org_known'),
       name: 'Known',
-      plan: 'pro',
-      region: 'us-east-1',
       createdBy: creator,
       workosUpdatedAt: T0,
     });
+    // Not the defaults, so a deletion that reset them would show.
+    await t.db.execute(sql`update organizations set plan = 'pro', region = 'us-east-1' where id = 'org_known'`);
     await organizations.markDeleted(db, org('org_known'), T1);
 
     expect(await stored('org_known')).toMatchObject({

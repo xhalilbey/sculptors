@@ -131,8 +131,6 @@ describe('organizations, as the app role', () => {
       organizations.upsertCreated(db, {
         id: org('org_AppRoleCreated'),
         name: 'Created',
-        plan: 'free',
-        region: 'eu-central-1',
         createdBy: member,
         workosUpdatedAt: T0,
       })

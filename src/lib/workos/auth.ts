@@ -20,11 +20,7 @@ import {
 
 export { getWorkOSClient, getWorkOSEnv } from './client';
 export { clearWorkOSSessionCookie, setWorkOSSessionCookie } from './cookies';
-export {
-  WORKOS_SESSION_COOKIE,
-  WORKOS_SESSION_MAX_AGE,
-  WORKOS_STATE_COOKIE,
-} from './constants';
+export { WORKOS_SESSION_COOKIE } from './constants';
 
 /*
  * Sessions and organizations, v2.

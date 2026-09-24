@@ -69,14 +69,16 @@ export async function insertIfMissing(handle: IdentityDb, row: { id: Organizatio
 /**
  * Mirror an organization this app just created in WorkOS. Unlike a sync,
  * creation owns every field it sets, so all of them are refreshed.
+ *
+ * Plan and region are not among them. The service used to pass constants
+ * that restated the schema's defaults, for columns nothing reads; now a new
+ * row takes the defaults and an existing one keeps what it has.
  */
 export async function upsertCreated(
   handle: IdentityDb,
   row: {
     id: OrganizationId;
     name: string;
-    plan: string;
-    region: string;
     createdBy: UserId;
     /** The created WorkOS organization's updatedAt. */
     workosUpdatedAt: Date;
@@ -94,8 +96,6 @@ export async function upsertCreated(
         // the name is the one field WorkOS may already have changed since.
         name: fromProposedIfNotOlder('organizations', 'name'),
         workosUpdatedAt: laterStamp('organizations'),
-        plan: sql`excluded.plan`,
-        region: sql`excluded.region`,
         createdBy: sql`excluded.created_by`,
       },
     });

@@ -16,7 +16,16 @@ import type { PgColumn } from 'drizzle-orm/pg-core';
 
 type MirrorTable = 'users' | 'organizations' | 'organization_memberships';
 
-// Table names come from the union above, never from input, so sql.raw is safe.
+/**
+ * The columns a write takes from WorkOS only when it is not older, as the
+ * database spells them. Written out rather than read from a PgColumn: with
+ * `casing: 'snake_case'` a column's `.name` is its camelCase key, so
+ * `excluded.${column.name}` would name a column that does not exist.
+ */
+type MirroredColumn = 'email' | 'first_name' | 'last_name' | 'avatar_url' | 'name';
+
+// Table and column names come from the unions above, never from input, so
+// sql.raw is safe. The column used to be any string, which left that to review.
 const notOlder = (table: MirrorTable) =>
   `(excluded.workos_updated_at >= ${table}.workos_updated_at or ${table}.workos_updated_at is null)`;
 
@@ -31,7 +40,7 @@ export function storedIsNotNewer(column: PgColumn, at: Date): SQL | undefined {
 }
 
 /** For a column in `on conflict do update set`: the proposed value only when it is not older. */
-export function fromProposedIfNotOlder(table: MirrorTable, column: string): SQL {
+export function fromProposedIfNotOlder(table: MirrorTable, column: MirroredColumn): SQL {
   return sql.raw(`case when ${notOlder(table)} then excluded.${column} else ${table}.${column} end`);
 }
 
