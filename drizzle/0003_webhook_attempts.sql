@@ -1,0 +1,1 @@
+ALTER TABLE "workos_webhook_events" ADD COLUMN "attempts" integer DEFAULT 1 NOT NULL;

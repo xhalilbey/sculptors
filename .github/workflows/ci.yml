@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      # Fails when a state-changing route handler is added without a guard.
+      # See scripts/check-route-guards.mjs for the allowed exceptions.
+      - name: Route guards
+        run: npm run check:routes
+
+      # The migration journal is consistent and the schema has no change
+      # without a generated migration. The build needs no database: the app
+      # connects lazily, and migrations run as a separate deploy step.
+      - name: Migrations
+        run: |
+          npm run db:check
+          npm run db:generate
+          git diff --exit-code drizzle/
+          test -z "$(git status --porcelain drizzle/)"
+
+      # Authorization tests, plus the database tests: the real migrations on
+      # in-process PGlite, RLS coverage, and every identity query shape.
+      - name: Tests
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+        env:
+          # Build-time only. The app validates real values at runtime; these
+          # exist so `next build` can complete without production secrets.
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+          SCULPTORS_OWNER_WORKOS_USER_ID: ci_placeholder
