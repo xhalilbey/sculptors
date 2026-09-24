@@ -14,7 +14,7 @@ const NAV_ITEMS = [
 export function SculptorsOriginHero() {
   return (
     <section className="bg-lp-ground" aria-labelledby="sculptors-hero-title">
-      <header className="mx-auto grid h-[76px] w-[min(1540px,calc(100%-64px))] grid-cols-[1fr_auto_1fr] items-center gap-7 max-lg:w-[calc(100%-32px)] max-md:h-[66px] max-md:w-[calc(100%-24px)] max-md:grid-cols-[1fr_auto]">
+      <header className="lp-header mx-auto grid h-[76px] w-[min(1540px,calc(100%-64px))] grid-cols-[1fr_auto_1fr] items-center gap-7 max-lg:w-[calc(100%-32px)] max-md:h-[66px] max-md:w-[calc(100%-24px)] max-md:grid-cols-[1fr_auto]">
         <Link href="/" className="flex w-max items-center gap-2.5">
           <Image
             src="/sculptors-icon.png"
@@ -28,22 +28,18 @@ export function SculptorsOriginHero() {
           <span className="super-emphasis text-[23px] tracking-[-0.04em] text-lp-ink">Sculptors</span>
         </Link>
 
-        <nav
-          className="flex items-center gap-[clamp(24px,2.8vw,46px)] text-sm font-semibold text-lp-ink max-md:hidden"
-          aria-label="Primary navigation"
-        >
+        {/* Groq's nav: pixel capitals, and a bar that rises onto the header's
+            hairline under the one being pointed at. */}
+        <nav className="lp-nav max-md:hidden" aria-label="Primary navigation">
           {NAV_ITEMS.map(item => (
-            <a key={item.label} href={item.href} className="transition-opacity hover:opacity-45">
+            <a key={item.label} href={item.href} className="lp-nav-link">
               {item.label}
             </a>
           ))}
         </nav>
 
-        <div className="flex items-center justify-self-end gap-3 text-sm font-semibold">
-          <Link
-            href="/auth/login"
-            className="inline-flex h-11 items-center justify-center rounded-full px-4 text-lp-ink transition-opacity hover:opacity-45 max-sm:hidden"
-          >
+        <div className="flex items-center self-stretch justify-self-end gap-3 text-sm font-semibold">
+          <Link href="/auth/login" className="lp-nav-link max-sm:hidden">
             Get started
           </Link>
           <a
@@ -69,7 +65,7 @@ export function SculptorsOriginHero() {
       <div className="hero-copy">
         <h1
           id="sculptors-hero-title"
-          className="super-display m-0 text-[clamp(48px,5.2vw,80px)] leading-[0.94] tracking-[-0.06em] text-lp-ink max-md:text-[clamp(44px,12vw,60px)]"
+          className="super-display m-0 text-[clamp(48px,5.2vw,80px)] leading-[0.94] tracking-[-0.045em] text-lp-ink max-md:text-[clamp(44px,12vw,60px)]"
         >
           <span className="block">The Agent Store</span>
           <span className="block">Autonomous Sales Intelligence</span>

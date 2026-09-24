@@ -22,6 +22,7 @@ import type { CSSProperties } from 'react';
 import { memo, useEffect, useRef, useState } from 'react';
 import { AgentShowcase } from '@/components/landing/agent-showcase';
 import { AgentStoreParts } from '@/components/landing/agent-store-parts';
+import { landingPixel, landingSans } from '@/components/landing/fonts';
 import { GraphMemoryHero } from '@/components/landing/graph-memory-hero';
 import { useLandingTheme } from '@/components/landing/landing-theme';
 import { RevealObserver } from '@/components/landing/reveal-observer';
@@ -391,7 +392,7 @@ export default function LandingPage() {
 
   return (
     <div
-      className="landing-night min-h-screen w-full overflow-x-hidden bg-lp-ground font-sans text-lp-ink selection:bg-lp-ink selection:text-lp-ground"
+      className={`landing-night ${landingSans.variable} ${landingPixel.variable} min-h-screen w-full overflow-x-hidden bg-lp-ground text-lp-ink selection:bg-lp-ink selection:text-lp-ground`}
       data-theme={landingTheme}
     >
       <RevealObserver />
@@ -860,7 +861,7 @@ const AgentActionCarousel = memo(function AgentActionCarousel() {
   return (
     <div className="relative">
       <div className="mx-auto mb-5 max-w-4xl px-5 text-center sm:px-6">
-        <p className="text-[12px] font-medium tracking-[0.01em] text-lp-ink/50">
+        <p className="lp-label text-lp-ink/50">
           From memory to action
         </p>
         <h2 className="super-heading mt-3 text-3xl text-lp-ink sm:text-4xl md:text-5xl">

@@ -791,3 +791,35 @@ bottom, to see how the page stands in dark.
   footer's oversized wordmark swallowed clicks on the row above it (its
   glyph box rises past line-height 0.82); it is decoration and now takes
   no pointer events.
+
+## 2026-09-24 — The landing page gets faces of its own, after Groq's
+
+The owner asked for better type, like Groq's, and singled out Groq's nav
+(pixel capitals, a hairline under the header, a bar under the current item).
+
+- **What was there**: nothing. The stack named "Super Sans VF", which no
+  file or `@font-face` provides, and `--font-sans` is an inline theme token
+  that never reaches `:root` -- so the page fell through to Tailwind's
+  default stack, the system font (SF Pro on a Mac, Segoe UI on Windows).
+  The eyebrows' `var(--font-mono)` was undefined for the same reason, and
+  one undefined `var()` voids a whole `font-family`, so they were never in
+  a mono either.
+- **Groq's faces** are esBuild (words) and komuna (labels), both licensed.
+  The open faces closest to them, chosen by setting candidates side by side
+  against groq.com's own rendering: **Figtree** (warm geometric, round e/o,
+  single-storey g) and **Bitcount Grid Single** at 300 (a thin pixel-grid
+  mono). Both come through next/font, served from this origin.
+- **Where**: Figtree for everything read on the landing; the pixel face,
+  in capitals at 0.08em, for the nav, eyebrows, the logo strip's line, the
+  footer's headings and small print, and the theme switch. The tilted
+  dashboard keeps the sans (it is the product, not a label).
+- **The nav**: items fill the header's height over a full-width hairline;
+  the pointed-at one turns brand blue and a 2px bar grows onto the
+  hairline under it.
+- **Weights**: the body's `'wght' 460` setting (for the app's intended
+  face) would pin every weight on a variable face to 460, so the landing
+  resets it and maps the `super-*` classes to font-weights in the
+  components layer, where a `font-*` utility still wins. Headlines are 500,
+  as Groq's are; the hero's tracking opened from -0.06em to -0.045em.
+- **Not done here**: the app itself (dashboard, auth) still falls through
+  to the system font for the same reason.

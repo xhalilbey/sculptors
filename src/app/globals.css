@@ -564,6 +564,7 @@
 }
 .logo-strip-label {
   margin: 0 auto 1.9rem;
+  /* A sentence in the pixel capitals, as Groq's announcement bar is. */
   color: color-mix(in srgb, var(--color-lp-ink) 40%, transparent);
   font-size: 14px;
   font-weight: 600;
@@ -1230,9 +1231,6 @@
 }
 .store-parts-eyebrow {
   color: var(--sp-muted);
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.72rem;
-  letter-spacing: 0.14em;
 }
 .store-parts h2 {
   margin-top: 0.9rem;
@@ -1399,6 +1397,112 @@ body:has(.landing-night[data-theme='dark']) {
   --iso-drop: rgba(0, 0, 0, 0.7);
 }
 
+/*
+ * The landing's type (components/landing/fonts.ts): Figtree for everything
+ * read, Bitcount Grid Single -- thin pixel capitals, spaced out -- for
+ * labels, after Groq's esBuild and komuna (owner's direction, 24 Sep 2026).
+ */
+.landing-night {
+  font-family: var(--font-lp-sans), ui-sans-serif, system-ui, sans-serif;
+  /* The body sets 'wght' 460 and Inter's character variants for the app's
+     face. On a variable face that 'wght' would pin every weight on the page
+     to 460, bold included, so the landing hands weight back to font-weight. */
+  font-variation-settings: normal;
+  font-feature-settings: normal;
+}
+@layer components {
+  /* The super-* classes carry weights as 'wght' settings for the app's
+     face; here they become font-weights, in this layer so a font-* utility
+     on the same element still wins. Groq sets its headlines at 500. */
+  .landing-night :is(.super-display, .super-heading, .super-body, .super-emphasis) {
+    font-variation-settings: normal;
+  }
+  .landing-night :is(.super-display, .super-heading) {
+    font-weight: 500;
+  }
+  .landing-night .super-emphasis {
+    font-weight: 600;
+  }
+}
+.lp-label,
+.lp-nav-link,
+.showcase-eyebrow,
+.store-parts-eyebrow,
+.logo-strip-label,
+.site-footer h4,
+.site-footer-bottom,
+.lp-theme-switch button {
+  /* No var(--font-mono) in this stack: it is an inline theme token, never
+     written to :root, and one undefined var() voids the whole declaration --
+     which is why the eyebrows that used it were never set in a mono. */
+  font-family: var(--font-lp-pixel), ui-monospace, monospace;
+  /* Groq sets its labels near 15.6px: a one-pixel-stroke face goes faint
+     and dotted much below 14. */
+  font-size: 14px;
+  font-weight: 300;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/*
+ * The header, Groq's way: a hairline across the whole page under it, and
+ * nav items in pixel capitals that fill the header's height, so the bar
+ * that rises under the pointed-at one sits exactly on the hairline.
+ */
+.lp-header {
+  position: relative;
+}
+.lp-header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 100vw;
+  height: 1px;
+  translate: -50% 0;
+  background: color-mix(in srgb, var(--color-lp-ink) 10%, transparent);
+  pointer-events: none;
+}
+.lp-nav {
+  display: flex;
+  align-self: stretch;
+  gap: clamp(24px, 2.8vw, 46px);
+}
+.lp-nav-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  align-self: stretch;
+  font-size: 15px;
+  color: color-mix(in srgb, var(--color-lp-ink) 66%, transparent);
+  transition: color 160ms ease;
+}
+.lp-nav-link::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--brand-solid);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.lp-nav-link:hover,
+.lp-nav-link:focus-visible {
+  color: var(--brand-solid);
+}
+.lp-nav-link:hover::after,
+.lp-nav-link:focus-visible::after {
+  transform: scaleX(1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-nav-link::after {
+    transition: none;
+  }
+}
+
 /* Light | Dark, in the footer's bottom row: two keys in a hairline pill, the
    chosen one raised like .btn-ghost. */
 .lp-theme-switch {
@@ -1417,8 +1521,6 @@ body:has(.landing-night[data-theme='dark']) {
   border: 1px solid transparent;
   border-radius: 999px;
   color: color-mix(in srgb, var(--color-lp-ink) 55%, transparent);
-  font-size: 12px;
-  font-weight: 600;
   transition: color 160ms ease;
 }
 .lp-theme-switch button:hover {
@@ -1458,9 +1560,6 @@ body:has(.landing-night[data-theme='dark']) {
 }
 .showcase-eyebrow {
   color: color-mix(in srgb, var(--color-lp-ink) 50%, transparent);
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.72rem;
-  letter-spacing: 0.14em;
 }
 .showcase h2 {
   max-width: 22ch;
@@ -1841,10 +1940,6 @@ body:has(.landing-night[data-theme='dark']) {
 }
 .site-footer h4 {
   color: color-mix(in srgb, var(--color-lp-ink) 45%, transparent);
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.68rem;
-  font-weight: 400;
-  letter-spacing: 0.12em;
 }
 .site-footer ul {
   display: grid;
@@ -1888,7 +1983,9 @@ body:has(.landing-night[data-theme='dark']) {
  * Sized to FILL, not guessed: measured live, "Sculptors" at this weight and
  * tracking renders 3.85em wide, so a font-size of container / 3.85 spans the
  * footer exactly. The container is min(92vw, 1320px), which gives
- * min(23.85vw, 342px). The variable weight draws wider than the synthesised
+ * min(23.85vw, 342px). Re-measured in Figtree (24 Sep 2026): still 3.85em,
+ * measured on the text's own range -- the element's box is 0.06em wider than
+ * the glyphs because of the negative right margin, so its width misleads. The variable weight draws wider than the synthesised
  * one, which is why the first measurement (3.55em) overflowed by 31px. It used to sit at clamp(4rem, 13.2vw, 15rem) and
  * covered 61% of the width, which read as a word that had been dropped in
  * rather than a wordmark.
