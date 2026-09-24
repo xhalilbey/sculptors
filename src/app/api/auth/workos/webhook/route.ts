@@ -52,11 +52,20 @@ export const POST = definePublicRoute({
       return NextResponse.json({ error: 'Missing signature' }, { status: 401 });
     }
 
+    // Built outside the try below, so the catch there sees only what
+    // constructEvent throws. getWorkOSClient throws a plain Error when a
+    // WorkOS key is missing or the cookie password is short; that reaches
+    // definePublicRoute, which logs it with its message and answers 500.
+    // Inside the try (24 Sep) it was logged as a verified event that could
+    // not be read, with the caller's own id and type beside it, before any
+    // signature had been checked.
+    const { webhooks } = getWorkOSClient();
+
     let event: Event;
 
     try {
       // Verifies the signature, then deserializes: the event is camelCase.
-      event = await getWorkOSClient().webhooks.constructEvent({ payload, sigHeader, secret });
+      event = await webhooks.constructEvent({ payload, sigHeader, secret });
     } catch (error) {
       // Only a signature problem is the sender's fault. The SDK's
       // verifyHeader (9.1.1) throws SignatureVerificationException, and
@@ -71,10 +80,10 @@ export const POST = definePublicRoute({
         return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
       }
 
-      // Anything else came after the signature verified, so the id and type
-      // in the raw payload are WorkOS's own and safe to log; no data field
-      // is. Nothing has been recorded yet, and a 500 makes WorkOS deliver
-      // the event again.
+      // Anything else came from the deserializer, after the signature
+      // verified, so the id and type in the raw payload are WorkOS's own and
+      // safe to log; no data field is. Nothing has been recorded yet, and a
+      // 500 makes WorkOS deliver the event again.
       logger.error('Failed to deserialize a verified WorkOS event', {
         errorType: error instanceof Error ? error.name : 'UnknownError',
         eventId: typeof payload.id === 'string' ? payload.id : undefined,

@@ -9,10 +9,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * event must not be applied twice, and a failed one must be applied when
  * WorkOS delivers it again. Only the SDK's SignatureVerificationException
  * is a bad signature: an event that verified but cannot be read is a 500,
- * so WorkOS retries it, and it is logged as what it is.
+ * so WorkOS retries it, and it is logged as what it is. A client that cannot
+ * be built is neither: it is a configuration error, answered 500 by the
+ * route wrapper before any signature is checked.
  */
 
 const constructEvent = vi.fn();
+const getWorkOSClient = vi.fn(() => ({ webhooks: { constructEvent } }));
 const recordWebhookEvent = vi.fn();
 const applyWebhookEvent = vi.fn();
 const markWebhookEventProcessed = vi.fn();
@@ -23,9 +26,7 @@ const error = vi.fn();
 vi.mock('@/lib/logger', () => ({
   logger: { warn, error, info: vi.fn(), debug: vi.fn() },
 }));
-vi.mock('@/lib/workos/client', () => ({
-  getWorkOSClient: () => ({ webhooks: { constructEvent } }),
-}));
+vi.mock('@/lib/workos/client', () => ({ getWorkOSClient }));
 vi.mock('@/lib/workos/webhook-sync', () => ({
   recordWebhookEvent,
   applyWebhookEvent,
@@ -56,7 +57,7 @@ const BAD_SIGNATURE = new SignatureVerificationException(
 
 beforeEach(() => {
   process.env.WORKOS_WEBHOOK_SECRET = 'whsec_test';
-  for (const mock of [constructEvent, recordWebhookEvent, applyWebhookEvent, markWebhookEventProcessed, markWebhookEventFailed, warn, error]) {
+  for (const mock of [constructEvent, getWorkOSClient, recordWebhookEvent, applyWebhookEvent, markWebhookEventProcessed, markWebhookEventFailed, warn, error]) {
     mock.mockReset();
   }
   markWebhookEventFailed.mockResolvedValue(undefined);
@@ -81,6 +82,7 @@ describe('POST /api/auth/workos/webhook', () => {
     const response = await POST(request({ id: 'event_1', event: 'organization.created' }));
 
     expect(response.status).toBe(401);
+    expect(getWorkOSClient).not.toHaveBeenCalled();
     expect(constructEvent).not.toHaveBeenCalled();
     expect(recordWebhookEvent).not.toHaveBeenCalled();
   });
@@ -114,6 +116,25 @@ describe('POST /api/auth/workos/webhook', () => {
     expect(warn).not.toHaveBeenCalled();
     expect(recordWebhookEvent).not.toHaveBeenCalled();
     expect(applyWebhookEvent).not.toHaveBeenCalled();
+  });
+
+  it('answers 500 as a configuration error when the client cannot be built', async () => {
+    // What getWorkOSCredentials throws: nothing about the delivery, whose
+    // signature has not been checked, so its id and type are not logged.
+    const misconfigured = new Error('WORKOS_COOKIE_PASSWORD must be at least 32 characters');
+
+    getWorkOSClient.mockImplementation(() => {
+      throw misconfigured;
+    });
+
+    const response = await POST(request(EVENT, 'forged'));
+
+    expect(response.status).toBe(500);
+    expect(error).toHaveBeenCalledWith('Unhandled route error', misconfigured, expect.any(Object));
+    expect(error).not.toHaveBeenCalledWith('Failed to deserialize a verified WorkOS event', expect.anything());
+    expect(warn).not.toHaveBeenCalled();
+    expect(constructEvent).not.toHaveBeenCalled();
+    expect(recordWebhookEvent).not.toHaveBeenCalled();
   });
 
   it('verifies the payload exactly as it was received', async () => {
