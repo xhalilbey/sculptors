@@ -287,7 +287,8 @@ function handleError(
     logger.warn('Route error', { requestId, ...trace, status, reason: err.message });
   }
 
-  // Our own AppError messages go out as written; raw error text never reaches the client.
+  // A 4xx AppError's own message goes out as written; a 5xx, and any other error,
+  // gets the generic sentence, so raw error text never reaches the client.
   return fail(envelope, clientMessage(err, status), status);
 }
 
