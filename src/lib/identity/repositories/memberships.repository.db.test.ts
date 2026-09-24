@@ -77,7 +77,7 @@ describe('memberships.findActive', () => {
 });
 
 describe('memberships.upsertMany', () => {
-  it('upserts by id, refreshing every mirrored field', async () => {
+  it('upserts by organization and user, refreshing every mirrored field', async () => {
     const user = await seedUser(db, { workosUserId: 'user_up' });
 
     await member(user, 'user_up', 'om_up', 'org_up');
@@ -90,6 +90,46 @@ describe('memberships.upsertMany', () => {
     );
 
     expect(result.rows[0]).toEqual({ role: 'admin', status: 'pending', n: 1 });
+  });
+
+  // WorkOS gives a member who is removed and added again a new om_ id. The
+  // pair (organization, user) is the row's key, so the new id takes the row
+  // over instead of colliding with organization_memberships_org_user_key.
+  const T1 = new Date('2026-09-02T00:00:00Z');
+  const T2 = new Date('2026-09-04T00:00:00Z');
+
+  async function rowsFor(user: UserId) {
+    const result = await t.db.execute<{ id: string; status: string }>(
+      sql`select id, status from organization_memberships where user_id = ${user} and organization_id = 'org_readd'`
+    );
+
+    return result.rows;
+  }
+
+  it('takes the new WorkOS id when a member is removed and re-added', async () => {
+    const user = await seedUser(db, { workosUserId: 'user_readd' });
+
+    await member(user, 'user_readd', 'om_readdold', 'org_readd', { status: 'inactive', workosUpdatedAt: T1 });
+    await memberships.upsertMany(db, [
+      { id: om('om_readdnew'), organizationId: org('org_readd'), userId: user, workosUserId: 'user_readd', role: 'member', status: 'active', workosUpdatedAt: T2 },
+    ]);
+
+    expect(await rowsFor(user)).toEqual([{ id: 'om_readdnew', status: 'active' }]);
+  });
+
+  it('refuses a late event for the old id', async () => {
+    const user = await seedUser(db, { workosUserId: 'user_late' });
+
+    await member(user, 'user_late', 'om_lateold', 'org_readd', { status: 'inactive', workosUpdatedAt: T1 });
+    await memberships.upsertMany(db, [
+      { id: om('om_latenew'), organizationId: org('org_readd'), userId: user, workosUserId: 'user_late', role: 'member', status: 'active', workosUpdatedAt: T2 },
+    ]);
+    // Between the removal and the re-add, so older than the row's state.
+    await memberships.upsertMany(db, [
+      { id: om('om_lateold'), organizationId: org('org_readd'), userId: user, workosUserId: 'user_late', role: 'member', status: 'inactive', workosUpdatedAt: new Date('2026-09-03T00:00:00Z') },
+    ]);
+
+    expect(await rowsFor(user)).toEqual([{ id: 'om_latenew', status: 'active' }]);
   });
 });
 

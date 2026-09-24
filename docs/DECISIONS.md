@@ -1038,3 +1038,40 @@ environment; then the redirect can go through `getLogoutUrl` with that
 `returnTo`, a code change kept for then. `logout/route.test.ts` pins both
 guards, the revocation, the expired token, each failure path, the
 three-second bound and the Set-Cookie attributes production sends.
+
+## 2026-09-24 — A membership is keyed by organization and user
+
+**Decision.** `membershipsRepository.upsertMany` upserts on the pair
+(`organization_id`, `user_id`), the existing
+`organization_memberships_org_user_key`, instead of on the WorkOS
+membership id. On a conflict the row takes the proposed id, WorkOS user
+id, role, status and `workos_updated_at`, under the same ordering rule as
+every mirror write: a proposal older than the stored state is ignored.
+The row keeps its `created_at`. No schema change and no migration.
+
+**Why.** WorkOS gives a member who is removed from an organization and
+added again a new `om_` id. Upserting by id inserted that membership as a
+second row for the same pair, which the unique constraint refused. The
+sign-in sync (`syncMembershipsForUser`) then failed on every attempt, so
+the user could no longer sign in, and the `organization_membership.created`
+webhook answered 500 on every WorkOS retry. With the pair as the key the
+new id takes the row over, because its `updatedAt` is later than the old
+membership's removal; a late event for the old id carries an older time
+and loses, whichever order the deliveries arrive in. Nothing references
+`organization_memberships.id`, so rewriting it is safe. Rejected: a
+partial unique index on the pair `where status = 'active'`, which would
+keep one row per WorkOS id. A 'created' for the new id delivered before
+the 'deleted' for the old one would find the old row still active and
+violate that index, the same failure in a different order. Rejected:
+deleting the old row before inserting the new one, which needs its own
+ordering check and loses the row the history is kept in.
+
+**Consequence.** One row per organization and user still records who was
+where; the ids of earlier memberships of the same pair are not kept.
+`retireStale` compares WorkOS's current ids, which a re-keyed row carries,
+so the sync does not retire it. Two memberships for one pair in a single
+upsert would fail, but WorkOS never lists two for one pair.
+`memberships.repository.db.test.ts`, `organizations.db.test.ts` and the
+webhook seam test pin the re-added member through the repository, the
+sign-in sync and signed webhooks, and that the late event for the old id
+changes nothing.

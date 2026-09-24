@@ -110,6 +110,45 @@ describe('POST /api/auth/workos/webhook, end to end', () => {
     expect(await one(sql`select count(*)::int as n from workos_webhook_events where processed_at is not null and id like 'event_seam_%'`)).toEqual({ n: 3 });
   });
 
+  it('mirrors a member removed and added again, whom WorkOS gives a new membership id', async () => {
+    vi.stubEnv('WORKOS_WEBHOOK_SECRET', SECRET);
+    const pair = { organizationId: 'org_SEAMRE', userId: 'user_seam' };
+    const row = sql`select id, role, status from organization_memberships where organization_id = 'org_SEAMRE'`;
+
+    let response = await deliver(
+      wireMembershipEvent('organization_membership.created', 'event_seam_re_1', { id: 'om_SEAMA', ...pair, updatedAt: '2026-09-23T09:00:00.000Z' })
+    );
+
+    expect(response.status).toBe(200);
+
+    // Removed at the event's time (10:00), added again at 11:00 under a new
+    // id. The 'created' used to fail on the (organization, user) key with a
+    // 500 on every retry.
+    response = await deliver(wireMembershipEvent('organization_membership.deleted', 'event_seam_re_2', { id: 'om_SEAMA', ...pair }));
+
+    expect(response.status).toBe(200);
+
+    response = await deliver(
+      wireMembershipEvent('organization_membership.created', 'event_seam_re_3', { id: 'om_SEAMB', ...pair, updatedAt: '2026-09-23T11:00:00.000Z' })
+    );
+
+    expect(response.status).toBe(200);
+    expect((await t.db.execute(row)).rows).toEqual([{ id: 'om_SEAMB', role: 'member', status: 'active' }]);
+
+    // An update to the old membership from before its removal, delivered late.
+    response = await deliver(
+      wireMembershipEvent('organization_membership.updated', 'event_seam_re_4', {
+        id: 'om_SEAMA',
+        ...pair,
+        role: 'admin',
+        updatedAt: '2026-09-23T09:30:00.000Z',
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect((await t.db.execute(row)).rows).toEqual([{ id: 'om_SEAMB', role: 'member', status: 'active' }]);
+  });
+
   it('writes the first name, last name and avatar of a user.updated', async () => {
     vi.stubEnv('WORKOS_WEBHOOK_SECRET', SECRET);
 

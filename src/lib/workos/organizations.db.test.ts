@@ -180,6 +180,27 @@ describe('syncMembershipsForUser', () => {
     expect(listed.map((m) => m.id)).toEqual(expect.arrayContaining(['om_P1', 'om_P2']));
   });
 
+  it('mirrors a membership WorkOS re-created with a new id', async () => {
+    await t.db.execute(sql`insert into organizations (id, name) values ('org_S6', 'Six') on conflict do nothing`);
+    // The member was removed (om_S6old deactivated), then added again, and
+    // WorkOS gave the new membership a new id. The sign-in sync used to fail
+    // here on the (organization, user) key, so the user could not sign in.
+    await t.db.execute(sql`insert into organization_memberships (id, organization_id, user_id, workos_user_id, status, workos_updated_at)
+      values ('om_S6old', 'org_S6', ${USER}, 'user_sync', 'inactive', '2026-09-22T00:00:00Z')`);
+
+    const listed = await syncMembershipsForUser({
+      userId: USER,
+      workosUserId: 'user_sync',
+      listedAt: new Date('2026-09-22T13:00:00Z'),
+      memberships: [workos('om_S6new', 'org_S6', 'Six', '2026-09-22T12:00:00.000Z')],
+    });
+
+    expect(listed.map((m) => m.id)).toEqual(['om_S6new']);
+    expect((await t.db.execute(sql`select id, status from organization_memberships where organization_id = 'org_S6'`)).rows).toEqual([
+      { id: 'om_S6new', status: 'active' },
+    ]);
+  });
+
   it('answers null for malformed ids instead of querying', async () => {
     expect(await findMembership(USER, "org_S2' or '1'='1")).toBeNull();
     expect(await findMembership('not-a-uuid', 'org_S2')).toBeNull();

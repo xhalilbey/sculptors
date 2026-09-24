@@ -75,8 +75,19 @@ export type MembershipUpsert = Pick<
 };
 
 /**
- * Upsert by WorkOS membership id; every mirrored field is refreshed, unless
- * the stored row came from a newer WorkOS state (mirror-order.ts).
+ * Upsert by (organization, user); every mirrored field, the WorkOS id
+ * included, is refreshed unless the stored row came from a newer WorkOS
+ * state (mirror-order.ts).
+ *
+ * The pair is the key, not the WorkOS membership id, because WorkOS gives a
+ * member who is removed and added again a new om_ id. Upserting by id used
+ * to insert that second membership as a new row, which the unique
+ * (organization_id, user_id) constraint refused: every sign-in sync and
+ * every redelivery of the 'created' webhook failed for that user. Now the
+ * row takes the newest id when its state is not older, and a late event
+ * for the old id carries an older time and loses. Nothing references
+ * organization_memberships.id, so re-keying the row is safe; it keeps its
+ * createdAt.
  */
 export async function upsertMany(handle: IdentityDb, rows: MembershipUpsert[]): Promise<void> {
   const db = unwrap(handle);
@@ -87,10 +98,9 @@ export async function upsertMany(handle: IdentityDb, rows: MembershipUpsert[]): 
     .insert(organizationMemberships)
     .values(rows)
     .onConflictDoUpdate({
-      target: organizationMemberships.id,
+      target: [organizationMemberships.organizationId, organizationMemberships.userId],
       set: {
-        organizationId: sql`excluded.organization_id`,
-        userId: sql`excluded.user_id`,
+        id: sql`excluded.id`,
         workosUserId: sql`excluded.workos_user_id`,
         role: sql`excluded.role`,
         status: sql`excluded.status`,
@@ -108,6 +118,9 @@ export async function upsertMany(handle: IdentityDb, rows: MembershipUpsert[]): 
  * `listedAt` is when the list was read from WorkOS. A membership written
  * from a newer WorkOS state than that (a webhook that landed while the list
  * was in flight) is not the list's to retire.
+ *
+ * `liveIds` are the current WorkOS membership ids. A row that upsertMany
+ * re-keyed to a re-created membership carries the new id, so it is live.
  */
 export async function retireStale(
   handle: IdentityDb,
