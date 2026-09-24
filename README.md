@@ -109,14 +109,16 @@ a change without a rebuild. Keys nothing reads any more were moved to
 The image must be reached on Cloud Run directly, through its `run.app` URL
 or a Cloud Run domain mapping. The client address is the rightmost
 `X-Forwarded-For` entry, the one Cloud Run appends
-(`src/lib/security/client-ip.ts`); it keys the sign-in budget and is the
-address WorkOS receives with each sign-in. Behind an external load
-balancer, Firebase Hosting or a CDN, that entry would be the proxy's own
-address for every user: ten sign-in posts from anyone would lock everyone
-out of that instance for 15 minutes, and WorkOS would see one address for
-all of them. Before such a proxy goes in front, `clientIpFrom` has to skip
-that many entries from the right (`docs/DECISIONS.md`, "The client address
-is the rightmost forwarded hop, everywhere"). No setting changes this.
+(`src/lib/security/client-ip.ts`); it keys the sign-in budget and the API
+budget (100 requests per path per minute), and is the address WorkOS
+receives with each sign-in. Behind an external load balancer, Firebase
+Hosting or a CDN, that entry would be the proxy's own address for every
+user: ten sign-in posts from anyone would lock everyone out of sign-in on
+that instance for up to 15 minutes, every user would share each API path's
+100 requests a minute, and WorkOS would see one address for all of them.
+Before such a proxy goes in front, `clientIpFrom` has to skip that many
+entries from the right (`docs/DECISIONS.md`, "The client address is the
+rightmost forwarded hop, everywhere"). No setting changes this.
 
 ## Commands
 

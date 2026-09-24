@@ -900,28 +900,29 @@ cookie. It runs the API budget, and since "Sign-in submissions are
 throttled, page views are not" it holds the only sign-in throttle, counted
 after its own same-origin check. An advisory that bypasses the middleware
 matters to this app again: the routes still refuse a foreign origin and
-check the session themselves, but sign-in would go unthrottled.)* The gate omits dev dependencies so an advisory in a build
-or test tool, which never reaches the image, does not fail every push, and
-it stops at high so a moderate does not either. Rejected: `npm audit fix
---force`, which would take drizzle-kit back to 0.18 and break
-`db:generate`; and Dependabot, which opens pull requests on its own and is
-the owner's call. eslint-config-next stays at 16.0.10: 16.3 adds
+check the session themselves, but sign-in would go unthrottled.)*
+The gate omits dev dependencies so an advisory in a build or test
+tool, which never reaches the image, does not fail every push, and
+it stops at high so a moderate does not either. Rejected: `npm audit
+fix --force`, which would take drizzle-kit back to 0.18 and break
+`db:generate`; and Dependabot, which opens pull requests on its own
+and is the owner's call. eslint-config-next stays at 16.0.10: 16.3 adds
 `@next/next/no-location-assign-relative-destination`, which warns on the
-four deliberate document navigations to route handlers
-(`/api/auth/logout` in `auth-context.tsx` and `settings-screen.tsx`,
-`/api/auth/workos/login` on the login page). *(24 Sep, later: two remain,
-the `location.assign` in `auth-context.tsx`'s signOut and the login page's
-`location.href`. `settings-screen.tsx` now calls signOut, and the rule
-does not flag the two `location.replace` calls in `auth-context.tsx`. Two
-warnings still fail `--max-warnings 0`, so the reason holds.)* Its remedy, `router.push`,
+four deliberate document navigations to route handlers (`/api/auth/logout`
+in `auth-context.tsx` and `settings-screen.tsx`, `/api/auth/workos/login`
+on the login page). *(24 Sep, later: two remain, the `location.assign`
+in `auth-context.tsx`'s signOut and the login page's `location.href`.
+`settings-screen.tsx` now calls signOut, and the rule does not flag the
+two `location.replace` calls in `auth-context.tsx`. Two warnings still
+fail `--max-warnings 0`, so the reason holds.)* Its remedy, `router.push`,
 first fetches the target as an RSC request; the logout GET refuses any
 `Sec-Fetch-Mode` but `navigate`, and the login route redirects to WorkOS,
-so these stay document navigations. A disable comment, or an absolute URL
-that hides the string from the rule, would be an escape hatch. It is a
-dev dependency and in no advisory. Since 16.3,
-`next dev` also writes AGENTS.md and a CLAUDE.md that loads it whenever it
-detects an AI coding agent. Rejected: committing them, which would let a
-dependency author the instructions every agent session reads.
+so these stay document navigations. A disable comment, or an absolute
+URL that hides the string from the rule, would be an escape hatch. It is
+a dev dependency and in no advisory. Since 16.3, `next dev` also writes
+AGENTS.md and a CLAUDE.md that loads it whenever it detects an AI coding
+agent. Rejected: committing them, which would let a dependency author the
+instructions every agent session reads.
 
 **Consequence.** A new high or critical advisory in a runtime dependency
 fails CI until it is upgraded; accepting one instead is an entry here and a
@@ -1217,9 +1218,9 @@ because tenant tables will need it.
 **Consequence.** A purge of identity rows, if one is ever needed, runs as
 the owner, like a migration. A repository function that deletes from an
 identity table fails as the app role; a new repository function gets its
-app-role run in `app-role.db.test.ts`. The production project's role already exists (created 23 Sep with
-the earlier runbook); the new steps apply to a new project, and `\password`
-alone rotates the password.
+app-role run in `app-role.db.test.ts`. The production project's role already
+exists (created 23 Sep with the earlier runbook); the new steps apply to a
+new project, and `\password` alone rotates the password.
 
 ## 2026-09-24 — Pages send a static security policy, without script-src
 

@@ -20,10 +20,10 @@ export type RecordOutcome = 'recorded' | 'retry' | 'duplicate';
  * metadata, array or nested object (webhook-sync.ts; DECISIONS, "Webhook
  * events keep ids and times; deleted users keep no profile"). The walk over
  * keys, arrays and nested objects stays as a guard for what `record`
- * accepts, any record, not because such payloads arrive. A NUL in an organization name is handled where the name
- * is mirrored (mirroredName in organizations.repository.ts), not here.
- * Anything that is not a string, an array or a plain object is left for
- * JSON.stringify.
+ * accepts, any record, not because such payloads arrive. A NUL in an
+ * organization name is handled where the name is mirrored (mirroredName in
+ * organizations.repository.ts), not here. Anything that is not a string, an
+ * array or a plain object is left for JSON.stringify.
  */
 function storable(value: unknown): unknown {
   if (typeof value === 'string') return value.replaceAll('\u0000', '');
