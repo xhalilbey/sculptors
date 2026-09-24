@@ -514,10 +514,13 @@
   justify-content: center;
   min-height: 48px;
   padding: 0 22px;
+  /* The raised key, its face white (#FFFFFF, owner's direction, 24 Sep
+     2026; it was #EBEBEB): the gradient ring and inset highlights stay, as
+     they are what make it read as a key rather than an outline. */
   border: 1px solid transparent;
   border-radius: 999px;
   background:
-    linear-gradient(var(--key-face, #ebebeb), var(--key-face, #ebebeb)) padding-box,
+    linear-gradient(var(--key-face, #ffffff), var(--key-face, #ffffff)) padding-box,
     linear-gradient(var(--key-ring-top, rgba(0, 0, 0, 0.13)), var(--key-ring-foot, rgba(255, 255, 255, 0.68)))
       border-box;
   box-shadow:
@@ -530,7 +533,7 @@
 }
 .btn-ghost:hover {
   background:
-    linear-gradient(var(--key-face-hover, #f2f2f2), var(--key-face-hover, #f2f2f2)) padding-box,
+    linear-gradient(var(--key-face-hover, #f7f7f7), var(--key-face-hover, #f7f7f7)) padding-box,
     linear-gradient(var(--key-ring-top, rgba(0, 0, 0, 0.13)), var(--key-ring-foot, rgba(255, 255, 255, 0.68)))
       border-box;
 }
@@ -612,7 +615,7 @@
  */
 .logo-mark {
   display: block;
-  height: calc(var(--logo-h) * var(--trim, 1));
+  height: calc(var(--logo-h) * var(--fit, 1));
   aspect-ratio: var(--ratio);
   background-color: currentColor;
   -webkit-mask-position: center;
@@ -902,308 +905,8 @@
   min-width: 0;
   padding: 20px 26px;
 }
-.iso-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 36px;
-}
-.iso-top-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-.iso-top-title svg {
-  width: 16px;
-  height: 16px;
-  color: var(--iso-soft);
-}
-.iso-top-tools {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.iso-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--iso-line);
-  border-radius: 9px;
-  background: var(--iso-field);
-  color: var(--iso-ink);
-  font-size: 12.5px;
-  font-weight: 500;
-}
-.iso-chip svg {
-  width: 14px;
-  height: 14px;
-  color: var(--iso-soft);
-}
-.iso-chip.is-quiet {
-  border-color: transparent;
-  background: var(--iso-tint);
-  color: var(--iso-soft);
-}
-.iso-chip.is-ask svg {
-  color: #4359ef;
-}
-
-.iso-kpis {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-}
-.iso-kpi,
-.iso-card {
-  min-width: 0;
-  border: 1px solid var(--iso-line);
-  border-radius: 14px;
-  background: var(--iso-field);
-}
-.iso-kpi {
-  padding: 16px 18px 15px;
-}
-.iso-kpi-label {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--iso-soft);
-  font-size: 12.5px;
-  font-weight: 500;
-}
-.iso-kpi-label svg {
-  width: 14px;
-  height: 14px;
-}
-.iso-kpi-value {
-  margin-top: 8px;
-  font-size: 30px;
-  font-weight: 600;
-  line-height: 1.1;
-  letter-spacing: -0.035em;
-}
-.iso-kpi-note {
-  margin-top: 4px;
-  color: var(--iso-faint);
-  font-size: 11.5px;
-}
-
-.iso-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 16px;
-  min-height: 0;
-  flex: 1;
-}
-.iso-card {
-  padding: 18px 20px;
-}
-.iso-card-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 14.5px;
-  font-weight: 600;
-  letter-spacing: -0.015em;
-}
-.iso-card-sub {
-  margin-top: 3px;
-  color: var(--iso-faint);
-  font-size: 12px;
-}
-.iso-badge {
-  display: inline-flex;
-  align-items: center;
-  width: max-content;
-  padding: 3px 8px;
-  border-radius: 6px;
-  background: var(--iso-badge-bg);
-  color: var(--iso-up);
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0;
-}
-
-.iso-journey {
-  grid-column: span 3;
-}
-.iso-flow {
-  display: block;
-  width: 100%;
-  height: auto;
-  margin-top: 14px;
-  overflow: visible;
-}
-.iso-flow-ribbons {
-  animation: iso-flow-draw 1.1s cubic-bezier(0.65, 0, 0.35, 1) 0.55s both;
-}
-@keyframes iso-flow-draw {
-  from {
-    clip-path: inset(0 100% 0 0);
-  }
-  to {
-    clip-path: inset(0 0 0 0);
-  }
-}
-.iso-flow-label {
-  fill: var(--iso-ink);
-  font-size: 12.5px;
-  font-weight: 600;
-}
-.iso-flow-label.is-won {
-  fill: var(--iso-up);
-}
-.iso-flow-label.is-lost {
-  fill: var(--iso-lost);
-}
-.iso-flow-detail {
-  fill: var(--iso-faint);
-  font-size: 11px;
-}
-
-.iso-gauge {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-}
-.iso-gauge .iso-card-title {
-  align-self: stretch;
-  justify-content: center;
-}
-.iso-gauge-ring {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 188px;
-  height: 188px;
-  margin: 26px 0 20px;
-}
-.iso-gauge-ring svg {
-  position: absolute;
-  inset: 0;
-}
-/* The track's colour is the theme's, so it is set here rather than on the SVG. */
-.iso-gauge-ring circle:first-child {
-  stroke: var(--iso-track);
-}
-.iso-gauge-ring circle:last-child {
-  animation: iso-gauge-fill 1.3s cubic-bezier(0.16, 1, 0.3, 1) 0.6s both;
-}
-@keyframes iso-gauge-fill {
-  from {
-    stroke-dasharray: 0 100;
-  }
-}
-.iso-gauge-value {
-  color: var(--iso-up);
-  font-size: 38px;
-  font-weight: 600;
-  letter-spacing: -0.04em;
-}
-
-.iso-bars {
-  grid-column: span 2;
-}
-.iso-bars-plot {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  gap: 10px;
-  height: 200px;
-  margin-top: 16px;
-}
-.iso-bars-axis {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding-bottom: 22px;
-  color: var(--iso-faint);
-  font-size: 11px;
-  text-align: right;
-}
-.iso-bars-axis span {
-  line-height: 0;
-}
-.iso-bars-cols {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 22px;
-  background: repeating-linear-gradient(
-      to bottom,
-      var(--iso-line) 0 1px,
-      transparent 1px calc((100% - 22px) / 4)
-    )
-    top / 100% calc(100% - 22px) no-repeat;
-}
-.iso-bars-col {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-}
-.iso-bars-bar {
-  display: block;
-  width: 100%;
-  max-width: 56px;
-  max-height: calc(100% - 22px);
-  border-radius: 8px 8px 3px 3px;
-  background: linear-gradient(#1f73fd, #4b58e3);
-  transform-origin: bottom;
-  animation: iso-bar-grow 1s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-.iso-bars-col:nth-child(1) .iso-bars-bar { animation-delay: 0.6s; }
-.iso-bars-col:nth-child(2) .iso-bars-bar { animation-delay: 0.68s; }
-.iso-bars-col:nth-child(3) .iso-bars-bar { animation-delay: 0.76s; }
-.iso-bars-col:nth-child(4) .iso-bars-bar { animation-delay: 0.84s; }
-.iso-bars-col:nth-child(5) .iso-bars-bar { animation-delay: 0.92s; }
-@keyframes iso-bar-grow {
-  from {
-    transform: scaleY(0);
-  }
-}
-.iso-bars-month {
-  height: 14px;
-  color: var(--iso-faint);
-  font-size: 11px;
-}
-
-.iso-table {
-  grid-column: span 2;
-}
-.iso-table table {
-  width: 100%;
-  margin-top: 12px;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.iso-table th {
-  padding: 0 0 10px;
-  color: var(--iso-faint);
-  font-size: 11.5px;
-  font-weight: 500;
-  text-align: left;
-}
-.iso-table td {
-  padding: 12px 0;
-  border-top: 1px solid var(--iso-line);
-  font-weight: 500;
-}
-.iso-table td.is-up {
-  color: var(--iso-up);
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .iso-plane,
-  .iso-flow-ribbons,
-  .iso-gauge-ring circle:last-child,
-  .iso-bars-bar {
+  .iso-plane {
     animation: none;
   }
 }
@@ -1452,17 +1155,7 @@ body:has(.landing-night[data-theme='dark']) {
 .lp-header {
   position: relative;
 }
-.lp-header::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  width: 100vw;
-  height: 1px;
-  translate: -50% 0;
-  background: color-mix(in srgb, var(--color-lp-ink) 10%, transparent);
-  pointer-events: none;
-}
+/* The full-width hairline under the header was removed (owner, 24 Sep 2026). */
 .lp-nav {
   display: flex;
   align-self: stretch;
@@ -2016,4 +1709,68 @@ body:has(.landing-night[data-theme='dark']) {
     flex-direction: column;
     align-items: flex-start;
   }
+}
+
+/*
+ * TRIAL (24 Sep 2026): Databricks' palette on the light landing -- the
+ * owner: "use its colours, let's see how it stands". Lava #FF3621 for the
+ * call to action and accents, their navy #1B3139 for ink, the secondary key
+ * and the cards, and the logo strip on their deep band #0B2026. Shapes and
+ * depth are ours and unchanged. Dark theme untouched. Delete this block to
+ * go back.
+ */
+.landing-night:not([data-theme='dark']) {
+  /* Their oat, a touch of cream under the white. */
+  --color-lp-ground: #f9f7f4;
+  --color-lp-ink: #1b3139;
+  --brand-face: #1b3139;
+  --brand-solid: #ff3621;
+}
+.landing-night:not([data-theme='dark']) .btn-brand {
+  background: linear-gradient(#ff5a43, #ff3621);
+  box-shadow:
+    inset 0 3.3px 13.3333px rgba(255, 255, 255, 0.2),
+    inset 0 0.83px 3.33px #d92a15;
+}
+.landing-night:not([data-theme='dark']) .btn-brand:hover {
+  background: linear-gradient(#ff6b56, #ff4530);
+}
+.landing-night:not([data-theme='dark']) .btn-ghost {
+  --key-face: #1b3139;
+  --key-face-hover: #24404a;
+  --key-ring-top: rgba(255, 255, 255, 0.22);
+  --key-ring-foot: rgba(255, 255, 255, 0.04);
+  --key-glint: rgba(255, 255, 255, 0.14);
+  --key-ink: #ffffff;
+}
+.landing-night:not([data-theme='dark']) .logo-strip {
+  margin-bottom: 0;
+  padding: clamp(2.25rem, 4vw, 3.25rem) 0;
+  background: #0b2026;
+}
+.landing-night:not([data-theme='dark']) .logo-strip-label {
+  color: rgba(255, 255, 255, 0.72);
+}
+.landing-night:not([data-theme='dark']) .logo-strip-row {
+  color: rgba(255, 255, 255, 0.88);
+}
+body:has(.landing-night:not([data-theme='dark'])) {
+  background-color: #f9f7f4;
+}
+/* "Sales Intelligence" in lava, as Databricks sets "One database". */
+.landing-night:not([data-theme='dark']) .lp-hero-accent {
+  color: #ff3621;
+}
+
+/* The hero headline in the display face (fonts.ts, landingDisplay). */
+.landing-night .lp-display {
+  font-family: var(--font-lp-display), var(--font-lp-sans), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 500;
+}
+
+/* The real Overview inside the tilted sheet (overview-preview.tsx): the
+   page's own padding and ink, from the dashboard theme it is wrapped in. */
+.iso-overview {
+  padding: 30px 36px 0;
+  color: var(--dashboard-text);
 }

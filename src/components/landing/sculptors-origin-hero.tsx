@@ -65,10 +65,12 @@ export function SculptorsOriginHero() {
       <div className="hero-copy">
         <h1
           id="sculptors-hero-title"
-          className="super-display m-0 text-[clamp(48px,5.2vw,80px)] leading-[0.94] tracking-[-0.045em] text-lp-ink max-md:text-[clamp(44px,12vw,60px)]"
+          className="lp-display super-display m-0 text-[clamp(48px,5.2vw,80px)] leading-[0.98] tracking-[-0.025em] text-lp-ink max-md:text-[clamp(44px,12vw,60px)]"
         >
           <span className="block">The Agent Store</span>
-          <span className="block">Autonomous Sales Intelligence</span>
+          <span className="block">
+            Autonomous <span className="lp-hero-accent">Sales Intelligence</span>
+          </span>
         </h1>
 
         <p className="super-body mt-7 max-w-[920px] text-[clamp(17px,1.35vw,21px)] font-semibold leading-[1.3] tracking-[-0.025em] text-lp-ink/70 max-md:max-w-[420px] max-md:text-[16px]">

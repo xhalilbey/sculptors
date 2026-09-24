@@ -22,7 +22,7 @@ import type { CSSProperties } from 'react';
 import { memo, useEffect, useRef, useState } from 'react';
 import { AgentShowcase } from '@/components/landing/agent-showcase';
 import { AgentStoreParts } from '@/components/landing/agent-store-parts';
-import { landingPixel, landingSans } from '@/components/landing/fonts';
+import { landingDisplay, landingPixel, landingSans } from '@/components/landing/fonts';
 import { GraphMemoryHero } from '@/components/landing/graph-memory-hero';
 import { useLandingTheme } from '@/components/landing/landing-theme';
 import { RevealObserver } from '@/components/landing/reveal-observer';
@@ -392,7 +392,7 @@ export default function LandingPage() {
 
   return (
     <div
-      className={`landing-night ${landingSans.variable} ${landingPixel.variable} min-h-screen w-full overflow-x-hidden bg-lp-ground text-lp-ink selection:bg-lp-ink selection:text-lp-ground`}
+      className={`landing-night ${landingSans.variable} ${landingPixel.variable} ${landingDisplay.variable} min-h-screen w-full overflow-x-hidden bg-lp-ground text-lp-ink selection:bg-lp-ink selection:text-lp-ground`}
       data-theme={landingTheme}
     >
       <RevealObserver />
