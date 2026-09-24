@@ -24,7 +24,7 @@ export default function DashboardError({
   const theme = useDashboardTheme();
 
   useEffect(() => {
-    logger.error('Dashboard segment failed', { digest: error.digest });
+    logger.error('Dashboard segment failed', error, { digest: error.digest });
   }, [error]);
 
   return (

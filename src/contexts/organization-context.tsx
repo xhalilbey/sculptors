@@ -37,11 +37,21 @@ const OrganizationContext = createContext<OrganizationContextType | undefined>(u
  */
 export function OrganizationProvider({ children }: { children: React.ReactNode }) {
   const { user, organization: activeOrganization, loading, refreshUser } = useAuth();
-  const [organizations, setOrganizations] = useState<OrganizationDto[]>([]);
+  // null once the list failed to load; the value below then offers the
+  // active organization on its own.
+  const [organizations, setOrganizations] = useState<OrganizationDto[] | null>([]);
   const [organizationsLoading, setOrganizationsLoading] = useState(false);
+  const userId = user?.id;
+  const activeOrganizationId = activeOrganization?.id;
 
+  // Keyed on ids, not on the user and organization objects. Every
+  // /api/auth/me answer is a fresh object, so keying on them made the effect
+  // below reload the list after each refreshUser, while refreshOrganizations
+  // loaded it a second time through the closure it held from before. Now the
+  // effect reloads only for a different user or a different organization,
+  // and refreshOrganizations does the one load a refresh needs.
   const loadOrganizations = useCallback(async () => {
-    if (!user) {
+    if (!userId) {
       setOrganizations([]);
       setOrganizationsLoading(false);
 
@@ -56,21 +66,25 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
       logger.warn('Failed to load organization list', {
         error: error instanceof Error ? error.message : String(error),
       });
-      setOrganizations(activeOrganization ? [activeOrganization] : []);
+      setOrganizations(null);
     }
 
     setOrganizationsLoading(false);
-  }, [activeOrganization, user]);
+  }, [userId]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
 
+    // A tick later, not in the effect body: loadOrganizations sets state at
+    // once, which react-hooks/set-state-in-effect refuses there. Clearing
+    // the timer also drops a load that a re-run makes redundant, such as
+    // Strict Mode's second pass in development.
     const timeoutId = window.setTimeout(() => {
       void loadOrganizations();
     }, 0);
 
     return () => window.clearTimeout(timeoutId);
-  }, [loadOrganizations, user]);
+  }, [activeOrganizationId, loadOrganizations, userId]);
 
   const createOrganization = useCallback(async (name: string) => {
     try {
@@ -122,7 +136,9 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
   const value = useMemo(
     () => ({
       activeOrganization: user ? activeOrganization : null,
-      organizations: user ? organizations : [],
+      organizations: user
+        ? (organizations ?? (activeOrganization ? [activeOrganization] : []))
+        : [],
       loading: loading || organizationsLoading,
       createOrganization,
       selectOrganization,

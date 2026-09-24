@@ -5,14 +5,22 @@ import { readJson } from './api-error';
 export type SessionResponse = z.infer<typeof sessionResponseSchema>;
 
 /**
- * GET /api/auth/me. The status is returned rather than thrown: 401 is an
- * answer (signed out), not a failure. A 2xx body that does not match the
+ * What GET /api/auth/me answered: a session, or the status that says why
+ * there is none. A union, so a caller cannot hold a 2xx without a session
+ * (the old `{ status, session? }` shape needed a branch for that, which
+ * could never run).
+ */
+type SessionResult = { ok: true; session: SessionResponse } | { ok: false; status: number };
+
+/**
+ * GET /api/auth/me. A non-2xx status is returned rather than thrown: 401 is
+ * an answer (signed out), not a failure. A 2xx body that does not match the
  * contract throws, which the provider treats as signed out and logs.
  */
-export async function fetchSession(): Promise<{ status: number; session?: SessionResponse }> {
+export async function fetchSession(): Promise<SessionResult> {
   const response = await fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' });
 
-  if (!response.ok) return { status: response.status };
+  if (!response.ok) return { ok: false, status: response.status };
 
-  return { status: response.status, session: sessionResponseSchema.parse(await readJson(response)) };
+  return { ok: true, session: sessionResponseSchema.parse(await readJson(response)) };
 }

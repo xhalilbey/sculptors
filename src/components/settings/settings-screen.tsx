@@ -10,7 +10,6 @@ import {
   useDashboardTheme,
   type DashboardTheme,
 } from '@/hooks/use-dashboard-theme';
-import { logger } from '@/lib/logger';
 import { cn } from '@/lib/utils';
 
 /**
@@ -315,17 +314,14 @@ function AccountSection() {
   const [loggingOut, setLoggingOut] = useState(false);
   const displayName = user?.displayName || 'User';
 
+  // signOut navigates away and never settles, so the spinner stays until
+  // the page goes. It used to sit in a try whose catch navigated again,
+  // for a rejection that cannot happen.
   const onLogOut = async () => {
     if (loggingOut) return;
 
     setLoggingOut(true);
-
-    try {
-      await signOut();
-    } catch (error) {
-      logger.error('Sign out failed', error);
-      window.location.href = '/api/auth/logout';
-    }
+    await signOut();
   };
 
   return (
