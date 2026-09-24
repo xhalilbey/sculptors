@@ -1,10 +1,10 @@
 'use client';
 
 import { CircleHelp } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { Tone } from '@/components/charts/verdict';
 import { useDashboardTheme } from '@/hooks/use-dashboard-theme';
-import { ApiRequestError } from '@/lib/clients/api-error';
+import { useRemote } from '@/hooks/use-remote';
 import { cn } from '@/lib/utils';
 import { fetchHealthReport } from '../api/client';
 import type { HealthReportDto } from '../api/schemas';
@@ -73,35 +73,6 @@ function formatUpdateTime(instant: string): string {
   const at = new Date(instant);
 
   return `${updateDay.format(at)}, ${updateClock.format(at)} UTC`;
-}
-
-/** One request, a retry, and the previous answer kept while it runs. */
-function useHealthReport() {
-  const [attempt, setAttempt] = useState(0);
-  const [state, setState] = useState<{ attempt: number; report: HealthReportDto | null; error: string | null } | null>(null);
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    fetchHealthReport(controller.signal).then(
-      (report) => setState({ attempt, report, error: null }),
-      (error: unknown) => {
-        if (controller.signal.aborted) return;
-
-        setState((previous) => ({
-          attempt,
-          report: previous?.report ?? null,
-          error: error instanceof ApiRequestError ? error.message : 'Something went wrong. Please try again.',
-        }));
-      }
-    );
-
-    return () => controller.abort();
-  }, [attempt]);
-
-  const retry = useCallback(() => setAttempt((count) => count + 1), []);
-
-  return { report: state?.report ?? null, error: state?.attempt === attempt ? state.error : null, retry };
 }
 
 type Day = HealthReportDto['components'][number]['days'][number];
@@ -261,7 +232,7 @@ function PastIncidents({ days, tone }: { days: HealthReportDto['pastIncidents'];
 
 export function HealthScreen() {
   const theme = useDashboardTheme();
-  const { report, error, retry } = useHealthReport();
+  const { data: report, error, retry } = useRemote(fetchHealthReport);
 
   return (
     <section className="min-h-full px-6 pb-16 pt-8 text-[var(--dashboard-text)] lg:px-10">

@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import type { Tone } from '@/components/charts/verdict';
 import { darkCard, lightCard } from '@/components/ui/surfaces';
 import { useDashboardTheme } from '@/hooks/use-dashboard-theme';
+import { useRemote } from '@/hooks/use-remote';
 import { cn } from '@/lib/utils';
 import { fetchOrders } from '../api/client';
 import {
@@ -19,7 +20,6 @@ import {
 } from '../domain/orders';
 import { FilterChips, LoadError, NoMatches, ResultCount, SearchField } from './toolbar';
 import { ago, useNow } from './use-now';
-import { useRemote } from './use-remote';
 
 /**
  * Orders: the latest orders as live tracking cards (owner's direction, 23
@@ -161,7 +161,7 @@ function OrderCard({ order, currency, now, tone }: { order: Order; currency: str
 export function OrdersScreen() {
   const theme = useDashboardTheme();
   const now = useNow();
-  const { data, error, retry } = useRemote(fetchOrders, POLL_MS);
+  const { data, error, retry } = useRemote(fetchOrders, { pollMs: POLL_MS });
   const [filters, setFilters] = useState<OrderFilters>(DEFAULT_ORDER_FILTERS);
   const orders = useMemo(() => data?.orders ?? [], [data]);
   const shown = useMemo(() => filterOrders(orders, filters), [orders, filters]);

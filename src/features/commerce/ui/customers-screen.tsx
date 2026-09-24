@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import type { Tone } from '@/components/charts/verdict';
 import { darkCard, lightCard } from '@/components/ui/surfaces';
 import { useDashboardTheme } from '@/hooks/use-dashboard-theme';
+import { useRemote } from '@/hooks/use-remote';
 import { cn } from '@/lib/utils';
 import { fetchCustomers } from '../api/client';
 import {
@@ -19,7 +20,6 @@ import {
 } from '../domain/customers';
 import { FilterChips, LoadError, NoMatches, PickMenu, ResultCount, SearchField } from './toolbar';
 import { ago, useNow } from './use-now';
-import { useRemote } from './use-remote';
 
 /**
  * Customers: everyone who bought, as a card in the Products page's make --

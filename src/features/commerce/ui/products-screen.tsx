@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import type { Tone } from '@/components/charts/verdict';
 import { darkCard, lightCard } from '@/components/ui/surfaces';
 import { useDashboardTheme } from '@/hooks/use-dashboard-theme';
+import { useRemote } from '@/hooks/use-remote';
 import { cn } from '@/lib/utils';
 import { fetchProducts } from '../api/client';
 import {
@@ -23,7 +24,6 @@ import {
 } from '../domain/products';
 import { ProductArt } from './product-art';
 import { FilterChips, LoadError, NoMatches, PickMenu, ResultCount, SearchField } from './toolbar';
-import { useRemote } from './use-remote';
 
 /**
  * Products: every product as a quiet card -- its picture, its price and
