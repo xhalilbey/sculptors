@@ -1,14 +1,23 @@
 /**
- * In-Memory Rate Limiter
- * Protects against brute force and DDoS attacks
- * Uses sliding window algorithm
+ * In-memory fixed-window rate limiter, one store per server instance.
+ *
+ * A key's window opens at its first attempt and lasts `windowMs`. Up to
+ * `maxAttempts` are admitted in it; after that every attempt is refused
+ * until the window ends, and the next attempt opens a new one. Each
+ * instance counts only the requests it serves.
+ *
+ * Before 24 Sep this header said 'sliding window', and each entry kept an
+ * array of attempt timestamps that every call filtered by age. But the
+ * entry was also replaced once its resetTime had passed, so inside a live
+ * window the filter had nothing to drop: it was already this fixed window,
+ * with an array standing in for a counter.
  */
 
 import { clientIpFrom } from './client-ip';
 
 interface RateLimitEntry {
   resetTime: number;
-  attempts: number[];
+  count: number;
 }
 
 /** One budget: at most `maxAttempts` per `windowMs`. */
@@ -85,7 +94,10 @@ const generateKey = (identifier: string, endpoint: string): string => {
 };
 
 /**
- * Check rate limit with sliding window algorithm
+ * Count one attempt against the key's current window. A key with no entry,
+ * or whose window has passed its resetTime, opens a new window of
+ * `config.windowMs` at this attempt. Only admitted attempts are counted,
+ * and a window's end never moves, so refused retries cannot extend it.
  */
 const checkRateLimit = (
   identifier: string,
@@ -98,37 +110,26 @@ const checkRateLimit = (
   // Start cleanup if not running (ensure first entry schedules cleanup)
   startCleanup();
 
-  // Get or create entry
   let entry = store.get(key);
 
-  // Create new entry if doesn't exist or expired
+  // Open a new window if there is none or the last one has ended
   if (!entry || now > entry.resetTime) {
     entry = {
       resetTime: now + config.windowMs,
-      attempts: [],
+      count: 0,
     };
     store.set(key, entry);
   }
 
-  // Sliding window: Remove attempts outside the window
-  const windowStart = now - config.windowMs;
-
-  entry.attempts = entry.attempts.filter(
-    (timestamp) => timestamp > windowStart
-  );
-
-  // Check if limit exceeded
-  const currentCount = entry.attempts.length;
-  const allowed = currentCount < config.maxAttempts;
+  const allowed = entry.count < config.maxAttempts;
 
   if (allowed) {
-    // Add current attempt
-    entry.attempts.push(now);
+    entry.count += 1;
   }
 
   return {
     allowed,
-    remaining: Math.max(0, config.maxAttempts - currentCount - (allowed ? 1 : 0)),
+    remaining: allowed ? config.maxAttempts - entry.count : 0,
     resetTime: entry.resetTime,
   };
 };
