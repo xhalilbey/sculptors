@@ -5,7 +5,8 @@
  *
  * Production never guesses it: an unset value throws, and the same-origin
  * guard refuses every state-changing request with a logged reason. Before
- * 24 Sep 2026 two copies of the fallback (here and in the WorkOS client)
+ * 24 Sep 2026, when this module did not exist, two copies of the fallback
+ * (in the same-origin guard, request-guards.ts, and in the WorkOS client)
  * said `http://localhost:3000` in every mode, so a production deployment
  * without the variable admitted a localhost origin and redirected to it,
  * and in development the fallback named a port `npm run dev` does not use

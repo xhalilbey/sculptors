@@ -36,10 +36,12 @@ async function logoutResponse(request: NextRequest): Promise<NextResponse> {
 }
 
 /**
- * Logout is reached by top-level navigation (`window.location.*`) from seven
- * call sites, so it has to stay a GET that redirects — POST-only would break
- * all of them, and `requireSameOrigin` is unreliable here because browsers do
- * not send `Origin` on top-level GET navigations.
+ * Logout is reached by top-level navigation (`window.location.*`) from
+ * auth-context.tsx (signOut, the redirect on a 401 or 403 from
+ * /api/auth/me, and the logout broadcast from another tab), so it has to
+ * stay a GET that redirects — POST-only would break all of them, and
+ * `requireSameOrigin` is unreliable here because browsers do not send
+ * `Origin` on top-level GET navigations.
  *
  * The attack this guards against is a drive-by forced logout: an off-site
  * `<img src="/api/auth/logout">` or `fetch()`. Those are subresource requests,

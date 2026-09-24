@@ -7,8 +7,11 @@ import { getJson, readJson, toApiRequestError } from './api-error';
 
 /**
  * Browser calls to /api/organizations. Every response is parsed with the
- * wire schema (never cast), and every failure is an ApiRequestError with the
- * server's message, so callers show one thing and log one thing.
+ * wire schema (never cast). A non-2xx answer throws an ApiRequestError with
+ * the server's message. A body that no longer matches the schema throws a
+ * ZodError, and a network failure or an abort throws the browser's own
+ * error. Callers log every failure; those that show one use an
+ * ApiRequestError's message, or a generic line for anything else.
  */
 
 export async function listOrganizations(signal?: AbortSignal): Promise<OrganizationDto[]> {

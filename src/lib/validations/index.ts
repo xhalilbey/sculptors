@@ -1,8 +1,11 @@
 /**
  * Centralized Validation Schemas
  *
- * The login form's schema, exported from one place for the login page and
- * any route that validates the same fields.
+ * The request schemas the pages and routes share: the login form's (the
+ * login page and the password route), the organization id in a path or
+ * body, and the organization name the create and rename routes accept. The
+ * browser's response parsers are imported from organizations.schema.ts
+ * directly.
  */
 
 export { loginSchema, type LoginInput } from './auth.schema';

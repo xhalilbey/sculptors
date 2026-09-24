@@ -42,6 +42,9 @@ describe('webhookEvents.record', () => {
   it('stores a payload holding a NUL, in a value or a key at any depth, without it', async () => {
     // jsonb refuses the \u0000 escape JSON.stringify writes for a NUL, so
     // this insert used to throw and the route answered every retry 500.
+    // The payload here pins what record() accepts, any record. The webhook
+    // itself stores only auditPayload's ids and times, never a name,
+    // domains or metadata (webhook-sync.db.test.ts pins that shape).
     const outcome = await webhookEvents.record(db, {
       id: 'event_nul',
       type: 'organization.updated',

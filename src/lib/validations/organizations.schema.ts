@@ -2,9 +2,12 @@ import { z } from 'zod';
 import type { OrganizationDto, SessionUserDto } from '@/types/api';
 
 /**
- * Runtime parsers for the organization wire shapes, for the browser: a
- * response is parsed, never cast, so a server change that breaks the
- * contract fails where it lands instead of rendering `undefined`.
+ * The organization wire shapes, both ways. The response parsers are for the
+ * browser: a response is parsed, never cast, so a server change that breaks
+ * the contract fails where it lands instead of rendering `undefined`.
+ * organizationNameSchema, at the end, is the request half: the name rule
+ * POST /api/organizations and PATCH /api/organizations/[id] validate with
+ * on the server.
  */
 
 export const organizationDtoSchema = z.object({

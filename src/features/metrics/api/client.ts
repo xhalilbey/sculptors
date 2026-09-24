@@ -10,8 +10,11 @@ import {
 
 /**
  * Browser calls to /api/metrics. Every response is parsed with its wire
- * schema, and every failure is an ApiRequestError carrying the server's
- * (sanitized) message.
+ * schema. A non-2xx answer throws an ApiRequestError carrying the server's
+ * (sanitized) message. A body that no longer matches its schema throws a
+ * ZodError, and a network failure or an abort throws the browser's own
+ * error; the UI shows a generic line for those and logs them (messageOf in
+ * hooks/use-remote.ts).
  */
 
 /** A selection as the API and the page URL both write it. */

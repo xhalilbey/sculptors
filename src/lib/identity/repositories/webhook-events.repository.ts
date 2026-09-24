@@ -9,13 +9,20 @@ export type RecordOutcome = 'recorded' | 'retry' | 'duplicate';
 /**
  * A payload as a jsonb column can hold it: U+0000 removed from every string
  * and key, at any depth. JSON.stringify writes a NUL as the escape \u0000,
- * which Postgres refuses in jsonb ("unsupported Unicode escape sequence"),
- * so one NUL in an event (an organization name or a metadata value set
- * through the WorkOS API) failed this insert, and with it every retry of
- * that event, before apply was reached. Only this audit copy is changed:
- * the route applies the verified event itself, and the organizations
- * repository drops a NUL from the names it mirrors (mirroredName). Anything
- * that is not a string, an array or a plain object is left for
+ * which Postgres refuses in jsonb ("unsupported Unicode escape sequence").
+ * While the whole of an event's data was stored, one NUL in it (an
+ * organization name or a metadata value set through the WorkOS API) failed
+ * this insert, and with it every retry of that event, before apply was
+ * reached.
+ *
+ * Since 24 Sep the only caller, recordWebhookEvent, passes auditPayload: a
+ * flat record of WorkOS ids, status, times and a role slug, with no name,
+ * metadata, array or nested object (webhook-sync.ts; DECISIONS, "Webhook
+ * events keep ids and times; deleted users keep no profile"). The walk over
+ * keys, arrays and nested objects stays as a guard for what `record`
+ * accepts, any record, not because such payloads arrive. A NUL in an organization name is handled where the name
+ * is mirrored (mirroredName in organizations.repository.ts), not here.
+ * Anything that is not a string, an array or a plain object is left for
  * JSON.stringify.
  */
 function storable(value: unknown): unknown {

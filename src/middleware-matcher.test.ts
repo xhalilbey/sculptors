@@ -7,7 +7,7 @@ import { config } from './middleware';
  * a copied regular expression, so the test sees what the build sees. It
  * skips static images, except under /api/, where `PATCH
  * /api/organizations/x.png` is a route call: skipping it once skipped the
- * API budget of 100 calls per address per minute.
+ * API budget of 100 calls per address and path per minute.
  *
  * This case lives apart from src/middleware.test.ts on purpose. Importing
  * Next's testing helper installs Next's node-environment patches, and their

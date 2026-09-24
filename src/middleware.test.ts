@@ -19,7 +19,9 @@ import { DEFAULT_AUTHENTICATED_ROUTE } from '@/config/constants';
  * page, because a directory missing from PROTECTED_PATH_PREFIXES renders its
  * shell for anyone (the /orders shell once did). A visitor with a session
  * who opens / goes to the dashboard. An API call past the budget of 100
- * per address per minute is a 429.
+ * per address and path per minute is a 429, and another path from the same
+ * address still has its own 100 (the limiter keys API_READ on the decoded
+ * path and the address).
  *
  * A production build routes a percent-encoded path like its decoded form,
  * while the middleware sees it as sent, so every check is pinned on encoded
@@ -288,6 +290,18 @@ describe('middleware API budget', () => {
     expect(await response.json()).toEqual({ error: 'Too many requests' });
     expect(response.headers.get('retry-after')).toBe('60');
     expect(response.headers.get('cache-control')).toBe('no-store');
+  });
+
+  it('keeps a budget per path, so a spent API path leaves another one open to the same address', async () => {
+    const middleware = await loadMiddleware();
+
+    expect(await spend(middleware, '/api/products', 100, 'GET')).not.toContain(429);
+    expect((await middleware(signedIn('/api/products'))).status).toBe(429);
+
+    const other = await middleware(signedIn('/api/organizations'));
+
+    expect(other.status).not.toBe(429);
+    expect(other.headers.get('x-middleware-next')).toBe('1');
   });
 
   it('counts every spelling of an API path against one budget, since Next routes them alike', async () => {
