@@ -5,6 +5,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import type { ZodType } from 'zod';
 import { z, ZodError } from 'zod';
+import { readJsonBody } from '@/lib/api/read-json-body';
 import { ensureOrganizationAccess } from '@/lib/auth/ensure-organization-access';
 import { resolveSession, type SessionResolution } from '@/lib/auth/session';
 import { formatErrorResponse } from '@/lib/error-handler';
@@ -48,9 +49,6 @@ import { AppError, ValidationError } from '@/types/errors';
  */
 
 const ORIGIN_EXEMPT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-
-/** The largest JSON body either wrapper reads. Our payloads are a few hundred bytes. */
-export const MAX_BODY_BYTES = 64 * 1024;
 
 /**
  * An incoming x-request-id is kept only when it looks like one: it is echoed
@@ -218,57 +216,6 @@ function finish(response: NextResponse, requestId: string, refreshedSessionData?
   }
 
   return response;
-}
-
-function isJsonContentType(value: string | null): boolean {
-  return value !== null && /^application\/json\s*(;|$)/i.test(value);
-}
-
-/**
- * Reads a JSON body without trusting the caller about its size: a declared
- * Content-Length over the cap is refused before reading, and the stream is
- * cut off at the cap whatever the header said (it can be absent or wrong).
- */
-async function readJsonBody(request: NextRequest): Promise<unknown> {
-  if (!isJsonContentType(request.headers.get('content-type'))) {
-    throw new AppError('Content-Type must be application/json', 'UNSUPPORTED_MEDIA_TYPE', 415);
-  }
-
-  const declared = Number(request.headers.get('content-length'));
-
-  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
-    throw new AppError('Request body is too large', 'PAYLOAD_TOO_LARGE', 413);
-  }
-
-  const chunks: Uint8Array[] = [];
-  let received = 0;
-
-  if (request.body) {
-    const reader = request.body.getReader();
-
-    for (;;) {
-      const { done, value } = await reader.read();
-
-      if (done) break;
-
-      received += value.byteLength;
-
-      if (received > MAX_BODY_BYTES) {
-        await reader.cancel();
-        throw new AppError('Request body is too large', 'PAYLOAD_TOO_LARGE', 413);
-      }
-
-      chunks.push(value);
-    }
-  }
-
-  const text = new TextDecoder().decode(Buffer.concat(chunks));
-
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new ValidationError('Request body must be valid JSON');
-  }
 }
 
 async function parseInput<TParams, TQuery, TBody>(

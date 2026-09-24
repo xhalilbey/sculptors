@@ -32,7 +32,8 @@ vi.mock('@/lib/tenancy/resource-check', async (importOriginal) => ({
   runResourceCheck,
 }));
 
-const { defineRoute, definePublicRoute, MAX_BODY_BYTES } = await import('./define-route');
+const { defineRoute, definePublicRoute } = await import('./define-route');
+const { MAX_BODY_BYTES } = await import('./read-json-body');
 const { defineResourceCheck } = await import('@/lib/tenancy/resource-check');
 
 function session(refreshed?: string) {

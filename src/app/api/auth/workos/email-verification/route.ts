@@ -1,6 +1,7 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { readJsonBody } from '@/lib/api/read-json-body';
 import { completeSignIn, signInContextFrom, signInOptions } from '@/lib/auth/sign-in';
 import { requireSameOrigin } from '@/lib/security/request-guards';
 import { getWorkOSClient, setWorkOSSessionCookie } from '@/lib/workos/auth';
@@ -23,7 +24,9 @@ export async function POST(request: NextRequest) {
     return originFailure;
   }
 
-  const parsedBody = emailVerificationSchema.safeParse(await request.json().catch(() => null));
+  // A body the shared reader refuses (not JSON, over 64 KiB) is answered
+  // like a bad code.
+  const parsedBody = emailVerificationSchema.safeParse(await readJsonBody(request).catch(() => null));
 
   if (!parsedBody.success) {
     return NextResponse.json(

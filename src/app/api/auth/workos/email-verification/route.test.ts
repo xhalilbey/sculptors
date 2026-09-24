@@ -25,11 +25,14 @@ const m = (() => {
   return mocks.current;
 })();
 
-function post(body: unknown = { code: ' 123456 ', pendingAuthenticationToken: 'pending_1' }) {
+function post(
+  body: unknown = { code: ' 123456 ', pendingAuthenticationToken: 'pending_1' },
+  headers: Record<string, string> = {}
+) {
   return POST(
     new NextRequest('http://localhost:3000/api/auth/workos/email-verification', {
       method: 'POST',
-      headers: { origin: 'http://localhost:3000', 'content-type': 'application/json' },
+      headers: { origin: 'http://localhost:3000', 'content-type': 'application/json', ...headers },
       body: JSON.stringify(body),
     })
   );
@@ -70,5 +73,27 @@ describe('POST /api/auth/workos/email-verification', () => {
     m.buildSessionContext.mockRejectedValue(new Error('connection refused'));
 
     expect((await post()).status).toBe(503);
+  });
+
+  it('refuses a body over 64 KiB like a bad code, without calling workos', async () => {
+    const response = await post({ code: '123456', pendingAuthenticationToken: 'p'.repeat(70 * 1024) });
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ success: false, error: 'Invalid or expired verification code.' });
+    expect(m.userManagement.authenticateWithEmailVerification).not.toHaveBeenCalled();
+  });
+
+  it('refuses a body that is not JSON like a bad code, without calling workos', async () => {
+    const response = await post(undefined, { 'content-type': 'text/plain' });
+
+    expect(response.status).toBe(401);
+    expect(m.userManagement.authenticateWithEmailVerification).not.toHaveBeenCalled();
+  });
+
+  it('refuses a foreign origin before calling workos', async () => {
+    const response = await post(undefined, { origin: 'https://evil.example' });
+
+    expect(response.status).toBe(403);
+    expect(m.userManagement.authenticateWithEmailVerification).not.toHaveBeenCalled();
   });
 });

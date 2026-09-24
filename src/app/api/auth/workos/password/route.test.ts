@@ -199,4 +199,26 @@ describe('POST /api/auth/workos/password', () => {
     expect(response.status).toBe(400);
     expect(m.userManagement.authenticateWithPassword).not.toHaveBeenCalled();
   });
+
+  it('refuses a body over 64 KiB without calling workos', async () => {
+    const response = await post({ email: 'ada@example.com', password: 'x'.repeat(70 * 1024) });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ success: false, error: 'A valid email and password are required.' });
+    expect(m.userManagement.authenticateWithPassword).not.toHaveBeenCalled();
+  });
+
+  it('refuses a body that is not JSON without calling workos', async () => {
+    const response = await post(undefined, { 'content-type': 'text/plain' });
+
+    expect(response.status).toBe(400);
+    expect(m.userManagement.authenticateWithPassword).not.toHaveBeenCalled();
+  });
+
+  it('refuses a foreign origin before calling workos', async () => {
+    const response = await post(undefined, { origin: 'https://evil.example' });
+
+    expect(response.status).toBe(403);
+    expect(m.userManagement.authenticateWithPassword).not.toHaveBeenCalled();
+  });
 });
