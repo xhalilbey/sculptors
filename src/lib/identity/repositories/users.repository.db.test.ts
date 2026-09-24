@@ -71,9 +71,11 @@ describe('users.upsertFromWorkOS', () => {
   });
 
   it('lets a new WorkOS user sign in with the address of a deleted one', async () => {
-    // User A, deleted in WorkOS (user.deleted marks the row inactive).
+    // User A, deleted in WorkOS before 24 Sep: user.deleted only marked the row inactive then, so
+    // it still holds the address. deactivateByWorkOSUserId now scrubs the email, which would leave
+    // nothing to collide with, so the old row is set up directly.
     await seedUser(db, { workosUserId: 'user_reused_a', email: 'Reused@Example.com' });
-    await users.deactivateByWorkOSUserId(db, 'user_reused_a', T0);
+    await t.db.execute(sql`update users set status = 'inactive' where workos_user_id = 'user_reused_a'`);
 
     // User B, a different WorkOS identity with the same address.
     const b = await users.upsertFromWorkOS(db, {
@@ -86,6 +88,8 @@ describe('users.upsertFromWorkOS', () => {
     });
 
     expect(b).toMatchObject({ workosUserId: 'user_reused_b', status: 'active' });
+    // Both rows share lower(email), so a unique index on it would have refused B.
+    expect(await users.findByWorkOSUserId(db, 'user_reused_a')).toMatchObject({ email: 'Reused@Example.com', status: 'inactive' });
     expect(await users.findIdByWorkOSUserId(db, 'user_reused_a')).not.toBe(b.id);
   });
 });
