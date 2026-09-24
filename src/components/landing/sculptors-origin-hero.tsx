@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { HeroDashboard } from '@/components/landing/hero-dashboard';
 import { IsoStage } from '@/components/landing/iso-stage';
 import { MarketplaceLogos } from '@/components/landing/marketplace-logos';
+import { SectorShowcase } from '@/components/landing/sector-showcase';
 
 const NAV_ITEMS = [
   { label: 'Platform', href: '#platform' },
@@ -109,6 +110,9 @@ export function SculptorsOriginHero() {
       </IsoStage>
 
       <MarketplaceLogos />
+
+      {/* The brand band runs on: the sectors the agents sell in. */}
+      <SectorShowcase />
     </section>
   );
 }

@@ -1774,3 +1774,228 @@ body:has(.landing-night:not([data-theme='dark'])) {
   padding: 30px 36px 0;
   color: var(--dashboard-text);
 }
+
+/*
+ * Sectors (sector-showcase.tsx): the logo strip's dark band continued, in
+ * Databricks' platform-section shape -- pixel eyebrow in lava, a headline,
+ * pill tabs, one wide light panel for the chosen sector, then all six as a
+ * two-column list (owner's direction, 24 Sep 2026).
+ */
+.sectors {
+  --band: #0b2026;
+  --band-ink: #f3f4f0;
+  --band-soft: rgba(243, 244, 240, 0.64);
+  --band-pill: rgba(255, 255, 255, 0.08);
+  padding: clamp(3rem, 6vw, 5rem) max(16px, calc((100% - 1320px) / 2)) clamp(4rem, 8vw, 6.5rem);
+  background: var(--band);
+  color: var(--band-ink);
+  text-align: center;
+}
+.sectors-eyebrow {
+  color: #ff7a66;
+  font-family: var(--font-lp-pixel), ui-monospace, monospace;
+  font-size: 15px;
+  font-weight: 300;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.sectors-title {
+  margin-top: 1.1rem;
+  font-family: var(--font-lp-display), var(--font-lp-sans), sans-serif;
+  font-size: clamp(2.2rem, 4vw, 3.4rem);
+  font-weight: 500;
+  line-height: 1.04;
+  letter-spacing: -0.025em;
+}
+.sectors-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: clamp(2rem, 4vw, 3rem);
+}
+.sectors-tabs button {
+  height: 44px;
+  padding: 0 20px;
+  border-radius: 999px;
+  background: var(--band-pill);
+  color: var(--band-ink);
+  font-size: 16px;
+  font-weight: 500;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+.sectors-tabs button:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+.sectors-tabs button.is-active {
+  background: #fff;
+  color: #1b3139;
+  font-weight: 600;
+}
+.sectors-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(1.5rem, 4vw, 4rem);
+  align-items: center;
+  margin-top: clamp(2rem, 4vw, 3rem);
+  padding: clamp(1.75rem, 4vw, 3.5rem);
+  border-radius: 4px;
+  background: #eeebe7;
+  color: #1b3139;
+  text-align: left;
+}
+@media (max-width: 860px) {
+  .sectors-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.sectors-icon {
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 10px 30px -12px rgba(27, 49, 57, 0.28);
+  color: #ff3621;
+}
+.sectors-icon svg {
+  width: 38px;
+  height: 38px;
+  stroke-width: 1.75;
+}
+.sectors-copy h3 {
+  margin-top: 1.75rem;
+  font-family: var(--font-lp-display), var(--font-lp-sans), sans-serif;
+  font-size: clamp(1.6rem, 2.6vw, 2.2rem);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.sectors-copy p {
+  max-width: 34rem;
+  margin-top: 0.75rem;
+  color: rgba(27, 49, 57, 0.72);
+  font-size: 1.08rem;
+  line-height: 1.5;
+}
+.sectors-copy ul {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 1.5rem;
+  padding: 0;
+  list-style: none;
+}
+.sectors-copy li {
+  position: relative;
+  padding-left: 1.4rem;
+  font-size: 0.98rem;
+  font-weight: 500;
+}
+.sectors-copy li::before {
+  content: '';
+  position: absolute;
+  top: 0.55em;
+  left: 0;
+  width: 8px;
+  height: 8px;
+  background: #ff3621;
+}
+.sectors-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 22px 26px;
+  border: 1px solid rgba(27, 49, 57, 0.08);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 24px 60px -30px rgba(27, 49, 57, 0.35);
+}
+.sectors-thread-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 -22px 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(27, 49, 57, 0.08);
+}
+.sectors-thread-bar span {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(27, 49, 57, 0.16);
+}
+.sectors-thread-bar em {
+  margin-left: auto;
+  color: rgba(27, 49, 57, 0.5);
+  font-family: var(--font-lp-pixel), ui-monospace, monospace;
+  font-size: 13px;
+  font-style: normal;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.sectors-bubble {
+  max-width: 82%;
+  padding: 12px 16px;
+  border-radius: 16px;
+  font-size: 15px;
+  line-height: 1.45;
+  animation: sectors-in 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.sectors-bubble.is-shopper {
+  align-self: flex-start;
+  border-bottom-left-radius: 4px;
+  background: #f1efec;
+}
+.sectors-bubble.is-agent {
+  align-self: flex-end;
+  border-bottom-right-radius: 4px;
+  background: #1b3139;
+  color: #fff;
+  animation-delay: 380ms;
+}
+@keyframes sectors-in {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+.sectors-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2.4rem 4rem;
+  margin-top: clamp(3rem, 6vw, 4.5rem);
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+@media (max-width: 720px) {
+  .sectors-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.sectors-grid h4 {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-family: var(--font-lp-display), var(--font-lp-sans), sans-serif;
+  font-size: 1.5rem;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+}
+.sectors-grid h4 svg {
+  width: 26px;
+  height: 26px;
+  stroke-width: 1.75;
+}
+.sectors-grid p {
+  max-width: 36rem;
+  margin-top: 0.7rem;
+  color: var(--band-soft);
+  font-size: 1.08rem;
+  line-height: 1.45;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sectors-bubble {
+    animation: none;
+  }
+}
