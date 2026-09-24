@@ -109,6 +109,20 @@ export interface PipelineFilters {
 
 export const NO_FILTERS: PipelineFilters = { query: '', kind: 'all', scope: 'accessible', tags: [], runAs: [] };
 
+/**
+ * Whether the filters differ from NO_FILTERS: the list may be narrowed, and
+ * "Clear filters" has something to clear.
+ */
+export function hasActiveFilters(filters: PipelineFilters): boolean {
+  return (
+    filters.query !== NO_FILTERS.query ||
+    filters.kind !== NO_FILTERS.kind ||
+    filters.scope !== NO_FILTERS.scope ||
+    filters.tags.length > 0 ||
+    filters.runAs.length > 0
+  );
+}
+
 export function filterPipelines(items: readonly Pipeline[], filters: PipelineFilters, memberId: string): Pipeline[] {
   const query = filters.query.trim().toLowerCase();
 

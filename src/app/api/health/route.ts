@@ -2,10 +2,10 @@ import { getHealthReport, healthSource, type HealthResponse } from '@/features/h
 import { defineRoute } from '@/lib/api/define-route';
 
 /**
- * GET /api/health -> System Health: every component's status and 90 days of
- * uptime, the last week's incidents, and the health numbers against the 30
- * days before. The system is ours, not the tenant's, but only signed-in
- * members of an organization see it.
+ * GET /api/health -> System Health: the state now, each component's status
+ * with its uptime and 90 daily bars, and the incidents of the last fifteen
+ * days. The system is ours, not the tenant's, but only signed-in members of
+ * an organization see it; like every defineRoute answer, it is no-store.
  */
 export const GET = defineRoute({
   envelope: 'success',
