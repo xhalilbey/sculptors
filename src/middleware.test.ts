@@ -1,5 +1,4 @@
 import { readdirSync } from 'node:fs';
-import { unstable_doesMiddlewareMatch } from 'next/experimental/testing/server';
 import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_AUTHENTICATED_ROUTE } from '@/config/constants';
@@ -19,10 +18,10 @@ import { DEFAULT_AUTHENTICATED_ROUTE } from '@/config/constants';
  * src/app/(dashboard) must send a visitor without a session to the login
  * page, because a directory missing from PROTECTED_PATH_PREFIXES renders its
  * shell for anyone (the /orders shell once did). A visitor with a session
- * who opens / goes to the dashboard. The matcher is compiled the way Next
- * compiles it: it skips static images, except under /api/, where `PATCH
- * /api/organizations/x.png` is a route call, and skipping it once skipped
- * the API budget of 100 calls per address per minute.
+ * who opens / goes to the dashboard. An API call past the budget of 100
+ * per address per minute is a 429. The matcher is pinned apart, in
+ * src/middleware-matcher.test.ts, because Next's testing helper patches the
+ * console of the file that imports it.
  *
  * The limiter's store is module-global, so each test imports a fresh
  * middleware. NODE_ENV is 'test' here, so the limiter is active, as in
@@ -224,20 +223,6 @@ describe('middleware page allowlist', () => {
 
     expect(response.headers.get('location')).toBeNull();
     expect(response.headers.get('x-middleware-next')).toBe('1');
-  });
-});
-
-describe('middleware matcher', () => {
-  it('runs on API paths that end in an image extension and skips static assets', async () => {
-    const { config } = await import('./middleware');
-
-    const runsOn = (url: string) => unstable_doesMiddlewareMatch({ config, url });
-
-    expect(runsOn('/api/organizations/x.png')).toBe(true);
-    expect(runsOn('/dashboard')).toBe(true);
-    expect(runsOn('/logo.png')).toBe(false);
-    expect(runsOn('/_next/static/chunk.js')).toBe(false);
-    expect(runsOn('/favicon.ico')).toBe(false);
   });
 });
 
