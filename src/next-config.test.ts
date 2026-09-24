@@ -7,6 +7,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
  * for every level away, so production logged nothing. Vitest never runs
  * Next's compiler, so the logger's own tests cannot see that; this reads the
  * config as `next build` does, with NODE_ENV=production.
+ *
+ * `next dev` must not write agent files into the tree. From 16.3 it creates
+ * AGENTS.md and CLAUDE.md when it detects an AI coding agent, unless
+ * agentRules is false.
  */
 
 afterEach(() => {
@@ -21,5 +25,14 @@ describe('next.config', () => {
     const { default: config } = await import('../next.config');
 
     expect(config.compiler?.removeConsole ?? false).toBe(false);
+  });
+
+  it('keeps next dev from writing agent files into the tree', async () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.resetModules();
+
+    const { default: config } = await import('../next.config');
+
+    expect(config.agentRules).toBe(false);
   });
 });

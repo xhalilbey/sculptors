@@ -860,3 +860,50 @@ purpose, while info lines (user and organization ids from the auth and
 organization contexts) stay out of it. `define-route.ts` logs a 4xx
 AppError's text under `reason`, since a context `message` no longer
 replaces the line's own.
+
+## 2026-09-24 — Runtime dependencies are audited in CI
+
+**Decision.** Next moves from 16.0.10 to 16.3.6 (`^16.3.6`), which brings
+sharp 0.35.4 and Next's own postcss 8.5.23. `npm audit fix`, without
+`--force`, lifts nanoid to 3.3.19 and a set of lint and build tools, and
+vitest moves to 4.1.11. CI runs `npm audit --omit=dev --audit-level=high`
+straight after `npm ci`. `next.config.ts` sets `agentRules: false`.
+
+**Why.** On 24 Sep `npm audit --omit=dev` rated next 16.0.10 critical and
+its nested postcss, sharp 0.34.4 and nanoid 3.3.17 high, all of them in
+what the Docker image ships. The Dockerfile's `npm ci` would have
+shipped them on the first deploy, and nothing in CI looked. Most of Next's
+advisories do not reach this app (no `remotePatterns`, no Server Actions,
+and a middleware that only checks the cookie is present, by design), but
+GHSA-mg66, the Cache Components connection-exhaustion DoS, is scoped to
+`cacheComponents: true`, which is ours, and the upgrade is a minor inside
+the caret range. The gate omits dev dependencies so an advisory in a build
+or test tool, which never reaches the image, does not fail every push, and
+it stops at high so a moderate does not either. Rejected: `npm audit fix
+--force`, which would take drizzle-kit back to 0.18 and break
+`db:generate`; and Dependabot, which opens pull requests on its own and is
+the owner's call. eslint-config-next stays at 16.0.10: 16.3 adds
+`@next/next/no-location-assign-relative-destination`, which warns on the
+four deliberate document navigations to route handlers
+(`/api/auth/logout` in `auth-context.tsx` and `settings-screen.tsx`,
+`/api/auth/workos/login` on the login page). Its remedy, `router.push`,
+first fetches the target as an RSC request; the logout GET refuses any
+`Sec-Fetch-Mode` but `navigate`, and the login route redirects to WorkOS,
+so these stay document navigations. A disable comment, or an absolute URL
+that hides the string from the rule, would be an escape hatch. It is a
+dev dependency and in no advisory. Since 16.3,
+`next dev` also writes AGENTS.md and a CLAUDE.md that loads it whenever it
+detects an AI coding agent. Rejected: committing them, which would let a
+dependency author the instructions every agent session reads.
+
+**Consequence.** A new high or critical advisory in a runtime dependency
+fails CI until it is upgraded; accepting one instead is an entry here and a
+matching change to the gate. Dev-tool advisories are reviewed by hand, and
+drizzle-kit's moderate esbuild advisory (through `@esbuild-kit`, its dev
+server only) is accepted until drizzle-kit drops that package. `next dev`
+now prints an instant-navigation notice for `/dashboard`, whose page
+renders behind the client-side auth gate; the production build is
+unchanged. npm 10 can no longer resolve a vitest upgrade by itself (its
+peer resolver fails on vite's optional `@vitejs/devtools` peer, which
+names `vitest@*`); the 4.1.11 entries came from npm 11's resolution and
+were checked with npm 10's `npm ci`.

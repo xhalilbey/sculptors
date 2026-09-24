@@ -10,6 +10,12 @@ const nextConfig: NextConfig = {
   // Cache Components (includes Partial Prerendering).
   cacheComponents: true,
 
+  // Since 16.3, `next dev` writes AGENTS.md and a CLAUDE.md that loads it
+  // whenever it detects an AI coding agent. Off: a dependency would be
+  // authoring the instructions every agent session reads, and each agent
+  // run of `npm run dev` would leave both files untracked in the tree.
+  agentRules: false,
+
   // Only TypeScript files are routes. A stray page.js or route.js (a build
   // artifact, a copied snippet) would otherwise become a live route that
   // neither the typechecker nor the route-guard ratchet reads.
