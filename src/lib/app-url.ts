@@ -11,11 +11,15 @@
  * and in development the fallback named a port `npm run dev` does not use
  * (it serves on 3002, as the README says).
  *
- * Read on every call, never at module load, so `next build` (the Docker
- * build has no NEXT_PUBLIC_APP_URL) and tests that stub the variable are
- * unaffected. Next.js still inlines a value that is set at build time, so
- * the origin is fixed per image; a server-only APP_URL read at runtime is
- * deferred (DECISIONS, 24 Sep). The Edge middleware reaches this module
+ * Read on every call, never at module load, so `next build` and tests that
+ * stub the variable are unaffected. Next.js inlines a NEXT_PUBLIC_* value
+ * only when the build has it set. The Docker build does not (.dockerignore
+ * drops .env* and the Dockerfile declares no ARG), so the image reads it
+ * from the Cloud Run service's environment on each call, and a new revision
+ * picks up a change without a rebuild. A build that has it set (CI's
+ * placeholder, a local `npm run build`) fixes that value in its bundles
+ * instead. A server-only APP_URL, which Next.js never inlines, is deferred
+ * (DECISIONS, 24 Sep). The Edge middleware reaches this module
  * through the same-origin guard, so it uses no Node APIs and is not
  * server-only.
  */

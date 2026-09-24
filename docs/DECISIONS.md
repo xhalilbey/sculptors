@@ -1128,11 +1128,17 @@ reached the webhook's signature check: every delivery was answered 401,
 logged as a rejected signature and retried by WorkOS, and the guard's
 line saying why was never written. Before, the posts were refused
 silently and the redirects went to `localhost:3000`, so such a deployment
-was already broken, only less visibly. Deferred: a server-only `APP_URL` read at runtime. Next.js
-inlines a `NEXT_PUBLIC_*` value that is set at build time into the server
-bundle as well, so the admitted origin is fixed per image; moving to
-`APP_URL` changes the README contract and the CI build env, and waits for
-the deploy to be wired. `request-guards.test.ts` pins the Origin-first
+was already broken, only less visibly. Next.js inlines a `NEXT_PUBLIC_*`
+value only when the build has it set. The Docker build does not (the
+Dockerfile declares no `ARG`, and `.env*` is not copied), so the image
+reads `NEXT_PUBLIC_APP_URL` from the Cloud Run service's environment on
+each call, and a new revision picks up a change without a rebuild; a build
+that has it set (CI's placeholder, a local build) fixes that value in its
+bundles. As first written this entry said the admitted origin was fixed
+per image, which holds only for such a build. Deferred: a server-only
+`APP_URL`, which Next.js never inlines; moving to it changes the README
+contract and the CI build env, and waits for the deploy to be wired.
+`request-guards.test.ts` pins the Origin-first
 rule, the full-origin comparison, loopback on any port outside production
 and never in it, and the logged refusal when production has no app URL.
 `app-url.test.ts` pins the production error and the 3002 fallback, and

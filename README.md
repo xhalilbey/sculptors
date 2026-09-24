@@ -76,10 +76,16 @@ Set these in `.env.local`, except the owner's two, which go in
 the owner role bypasses row level security, so the app process must never
 hold it; the app refuses to start if either is in its environment.
 `.env.example` and `.env.migrate.example` list every name the code reads, one
-file per destination (names only; never commit values). `NEXT_PUBLIC_*`
-values are inlined by Next.js at BUILD time, into the server bundle as well
-as the browser's: changing one in Cloud Run without rebuilding the image
-changes nothing. Keys nothing reads any more were moved to
+file per destination (names only; never commit values). Next.js inlines a
+`NEXT_PUBLIC_*` value into the bundles only when the build has it set, and
+the Docker build never does (the Dockerfile declares no `ARG`, and
+`.dockerignore` drops `.env*`). A value the browser reads
+(`NEXT_PUBLIC_LANDING_HERO_VARIANT`) is therefore fixed at build time, and
+this Dockerfile has no way to pass one in. `NEXT_PUBLIC_APP_URL` is read
+only on the server and in the middleware, so the image takes it from the
+Cloud Run service's environment: set it there to the public origin exactly
+(`https://`, host, no path, no trailing slash), and a new revision picks up
+a change without a rebuild. Keys nothing reads any more were moved to
 `.env.archive.local` (ignored, not loaded by Next.js).
 
 | Variable | Purpose |
