@@ -1,9 +1,9 @@
 import type { DashboardTheme } from '@/hooks/use-dashboard-theme';
 
 /**
- * The Store Events Panel's own surfaces, per theme; the shared ones -- the
- * cards and the blue band -- are in components/ui/surfaces.ts and
- * components/charts/verdict.ts.
+ * The Store Events Panel's own surfaces, per theme. The shared ones live
+ * elsewhere: the cards and the blue band in components/ui/surfaces.ts, the
+ * good, bad and neutral colours in components/charts/verdict.ts.
  */
 
 /** The charts' line: 5.0:1 on the dark card, 5.4:1 on white. */

@@ -2,12 +2,12 @@
 
 import { useId, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { cn } from '@/lib/utils';
-import { monotonePath, niceScale } from './geometry';
+import { keyTarget, monotonePath, niceScale } from './geometry';
 import { useElementWidth } from './use-element-width';
 import type { Tone } from './verdict';
 
 export interface ChartPoint {
-  /** Axis text: the bucket's first day, or its month. */
+  /** Axis text: the bucket's hour, first day, or month. */
   tick: string;
   /** The tooltip's heading: the bucket's span. */
   label: string;
@@ -16,7 +16,7 @@ export interface ChartPoint {
   /** Clipped by the period's edge: fewer days than a full week or month. */
   partial?: boolean;
   value: number;
-  /** The same days one period earlier. */
+  /** The same bucket in the comparison period (for Today, the same hours yesterday). */
   previous: number;
 }
 
@@ -63,9 +63,10 @@ const TONES = {
 } as const;
 
 /**
- * The large chart, for a dark card or for white (`tone`): this period as a 2px line over a 10%
- * wash, the previous period as a quiet dashed line under it, on one
- * zero-based axis with hairline gridlines.
+ * The large chart, for a dark card or for white (`tone`): this period as a
+ * 2px line over a wash that starts at 20% (dark) or 14% (light) and fades
+ * to nothing at the baseline, the previous period as a quiet dashed line
+ * under it, on one zero-based axis with hairline gridlines.
  *
  * A bucket the period clips (the first or last week or month) holds fewer
  * days, so its value drops for no reason but the calendar. The line into
@@ -130,30 +131,18 @@ export function LineChart({
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (count === 0) return;
+    const target = keyTarget(event.key, active, count);
 
-    const current = active ?? count - 1;
-    const next =
-      event.key === 'ArrowLeft'
-        ? current - 1
-        : event.key === 'ArrowRight'
-          ? current + 1
-          : event.key === 'Home'
-            ? 0
-            : event.key === 'End'
-              ? count - 1
-              : null;
+    if (target === null) return;
 
-    if (event.key === 'Escape') {
+    if (target === 'clear') {
       setActive(null);
 
       return;
     }
 
-    if (next === null) return;
-
     event.preventDefault();
-    setActive(clampIndex(active === null ? count - 1 : next));
+    setActive(target);
   };
 
   const tooltipOnLeft = active !== null && x(active) > width - 230;

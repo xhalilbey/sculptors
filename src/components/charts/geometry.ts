@@ -93,3 +93,34 @@ export function niceScale(maxValue: number, tickCount = 4): { max: number; ticks
 
   return { max: steps * step, ticks: Array.from({ length: steps + 1 }, (_, index) => index * step) };
 }
+
+/**
+ * Where a key moves a chart's focused bucket, given the bucket in focus
+ * (`active`, or null for none) and how many there are: an index, 'clear'
+ * for Escape, or null for a key the chart does not handle.
+ *
+ * With nothing in focus, the first arrow press shows the latest bucket, the
+ * one a reader most often wants; Home and End still mean the first and the
+ * last. The chart used to send every first press to the latest bucket, so
+ * Home landed on the end of the line.
+ */
+export function keyTarget(key: string, active: number | null, count: number): number | 'clear' | null {
+  if (key === 'Escape') return 'clear';
+  if (count === 0) return null;
+
+  const last = count - 1;
+  const clamp = (index: number) => Math.max(0, Math.min(last, index));
+
+  switch (key) {
+    case 'ArrowLeft':
+      return active === null ? last : clamp(active - 1);
+    case 'ArrowRight':
+      return active === null ? last : clamp(active + 1);
+    case 'Home':
+      return 0;
+    case 'End':
+      return last;
+    default:
+      return null;
+  }
+}
