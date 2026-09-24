@@ -275,6 +275,8 @@ a role the database actually constrains.
   app role's grants are exactly `SELECT/INSERT/UPDATE/DELETE`, default
   privileges from `neondb_owner` give later tables the same, and the role
   has `USAGE` without `CREATE` on `public` and nothing on `drizzle`.
+  *(Superseded 2026-09-24 by "The app role cannot delete identity rows",
+  below: the identity tables no longer grant DELETE.)*
 - A WorkOS webhook whose apply step fails is answered 500, and WorkOS's
   retry is then acknowledged as a duplicate without being applied (the
   event id was recorded first). The failure is kept in
@@ -1133,3 +1135,53 @@ and never in it, and the logged refusal when production has no app URL.
 `src/lib/workos/client.test.ts` pins the callback default on port 3002, the
 production error from `getWorkOSEnv` and a client that still builds without
 the app URL.
+
+## 2026-09-24 — The app role cannot delete identity rows
+
+**Decision.** Migration `0007_app_role_keeps_identity_rows` revokes DELETE
+on `users`, `organizations`, `organization_memberships` and
+`workos_webhook_events` from `sculptors_app`, which keeps SELECT, INSERT
+and UPDATE there. The default privileges from `0002` are unchanged, so a
+table a later migration creates still gives the app role SELECT, INSERT,
+UPDATE and DELETE, and never TRUNCATE. Tenant views must be created
+`with (security_invoker = true)`, and there are no materialized views
+over tenant data. `src/db/schema.db.test.ts` pins all of it: the exact
+privileges on each identity table and on a table created later, that the
+app role owns no table in `public`, that it cannot delete an
+organization, that RLS is enabled on partitioned tables too, that
+`public` holds no materialized view and that every view there runs as its
+caller. `src/lib/identity/repositories/app-role.db.test.ts` runs every
+exported repository function once as `sculptors_app` and reads the write
+back. `db/bootstrap-roles.sql` no longer takes the password on psql's
+command line: the operator writes a hex secret to an owner-only file
+outside the checkout and sets it with psql's `\password`.
+
+**Why.** The app never deletes an identity row: a user WorkOS deleted is
+marked inactive, an organization is marked deleted, a membership WorkOS no
+longer lists is retired, and webhook events are the log. Yet `0002`
+granted DELETE on every table, and a DELETE on `organizations` cascades
+(ON DELETE CASCADE) into its memberships and, once they exist, into the
+tenant tables keyed to it, where the cascade runs past row level
+security. No test looked at privileges, so a TRUNCATE grant, which skips
+RLS altogether, would have passed every test. A view reads its tables as
+its owner, whom RLS does not bind, unless it is `security_invoker`; a
+materialized view is a copy taken by its owner that no policy can
+protect. The default privileges would make either readable by the app
+role, and the schema tests only looked at relkind `r`. Every repository
+test ran as the PGlite superuser, so no statement the app actually sends
+had met the grants or the policies. The old runbook put the password in
+the process list, never showed it to the operator, used base64 (whose
+`+`, `/` and `=` break a URL) and sent it in clear inside CREATE ROLE;
+`\password` hashes it as SCRAM on the client. Rejected: splitting
+`controlPlanePolicy` into per-command policies so RLS refuses deletes too.
+The revoke already refuses them before any policy is consulted, and the
+policy change would regenerate the identity schema for no further
+protection. Rejected: revoking DELETE in the default privileges as well,
+because tenant tables will need it.
+
+**Consequence.** A purge of identity rows, if one is ever needed, runs as
+the owner, like a migration. A repository function that deletes from an
+identity table fails as the app role; a new repository function gets its
+app-role run in `app-role.db.test.ts`. The production project's role already exists (created 23 Sep with
+the earlier runbook); the new steps apply to a new project, and `\password`
+alone rotates the password.
