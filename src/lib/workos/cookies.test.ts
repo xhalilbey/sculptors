@@ -9,14 +9,19 @@ import {
 } from './cookies';
 
 /**
- * The attributes of the two WorkOS cookies are written here once, and the
- * route tests replace these writers with a double (src/test/sign-in-mocks.ts),
- * so this file is what pins the Set-Cookie production sends. Both cookies are
- * HttpOnly, SameSite=Lax and on Path=/, and Secure exactly when NODE_ENV is
- * production. The sealed session lives thirty days and the OAuth state ten
- * minutes. A clear is the same name on the same path with an empty value and
- * Max-Age=0: a clear on any other path would leave the real cookie in the
- * browser. The writers run against a real NextResponse.
+ * The attributes of the two WorkOS cookies are written once, in cookies.ts.
+ * The sign-in route tests (password, email-verification, callback) replace
+ * the session writer with a double (src/test/sign-in-mocks.ts), and the
+ * login, callback and logout tests run the state writer and the clears for
+ * real but pin only some of their attributes (logout checks the path as a
+ * substring), so this file is where every attribute of the Set-Cookie
+ * production sends is pinned, Secure, the lifetimes and the exact path
+ * included. Both cookies are HttpOnly, SameSite=Lax and on Path=/, and
+ * Secure exactly when NODE_ENV is production. The sealed session lives
+ * thirty days and the OAuth state ten minutes. A clear is the same name on
+ * the same path with an empty value and Max-Age=0: a clear on any other path
+ * would leave the real cookie in the browser. The writers run against a real
+ * NextResponse.
  */
 
 function setCookie(response: NextResponse, name: string) {
