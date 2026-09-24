@@ -586,7 +586,8 @@
 .logo-strip-track {
   display: flex;
   width: max-content;
-  animation: logo-strip-travel 64s linear infinite;
+  /* 64s for twenty marks, scaled with the count (22) so the pace holds. */
+  animation: logo-strip-travel 70s linear infinite;
 }
 .logo-strip-row {
   display: flex;

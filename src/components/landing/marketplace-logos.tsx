@@ -48,12 +48,17 @@ const fitFor = (ratio: number) => Math.sqrt(REFERENCE_RATIO / ratio);
 const MARKS: readonly Mark[] = [
   { name: 'Trendyol', file: 'trendyol.svg', ratio: 4.3804, optical: 1.1 },
   { name: 'Zalando', file: 'zalando.svg', ratio: 4.9636, optical: 1.06 },
+  // Its bird is white on a red disc in the original; drawn as a silhouette it
+  // would vanish into a solid disc, so the SVG cuts it out with an internal
+  // mask. The two airlines joined on 24 Sep 2026 (owner's direction).
+  { name: 'Turkish Airlines', file: 'turkish-airlines.svg', ratio: 6.372, optical: 1.22 },
   { name: 'Alibaba', file: 'alibaba.svg', ratio: 6.3361, optical: 0.9 },
   { name: 'Zara', file: 'zara.svg', ratio: 2.3774, optical: 0.84 },
   { name: 'Shopee', file: 'shopee.svg', ratio: 3.1279, optical: 1.14 },
   { name: 'Otto', file: 'otto.svg', ratio: 2.963, optical: 0.8 },
   { name: 'Zomato', file: 'zomato.svg', ratio: 4.7303, optical: 0.86 },
   { name: 'Allegro', file: 'allegro.svg', ratio: 3.235 },
+  { name: 'Qatar Airways', file: 'qatar-airways.svg', ratio: 2.951, optical: 1.14 },
   { name: 'Lazada', file: 'lazada.svg', ratio: 3.8162, optical: 1.12 },
   { name: 'Tesco', file: 'tesco.svg', ratio: 3.7395, optical: 0.94 },
   { name: 'Rakuten', file: 'rakuten.svg', ratio: 4.9407, optical: 0.9 },
