@@ -84,11 +84,12 @@ function useRail() {
 }
 
 /**
- * A label truncates in its column instead of wrapping. The opacity classes
- * are the fade the rail had when it could collapse to icons; it is always
- * open now, so they only hold the label at full opacity.
+ * A label truncates in its column instead of wrapping. It used to carry the
+ * fade the rail had when it could collapse to icons; the rail is always
+ * open now, and the opacity classes that held the label at full opacity
+ * are gone.
  */
-const menuLabel = "min-w-0 truncate transition-opacity duration-150 opacity-100 delay-100";
+const menuLabel = "min-w-0 truncate";
 
 /** Every entry the rail can show: the Store side, then the foot. */
 const SETTINGS_ITEM: NavItem = { title: "Settings", href: "/settings", icon: Settings };
@@ -308,9 +309,9 @@ function GlobalSidebarMenu({
         ) : null}
       </div>
 
-      {/* The label's fade without menuLabel's truncate, which is
-          overflow:hidden and cut the top half off the Ads tag. */}
-      <div className="shrink-0 px-3 pb-2 transition-opacity duration-150 opacity-100 delay-100">
+      {/* No menuLabel here: its truncate is overflow:hidden and cut the
+          top half off the Ads tag. */}
+      <div className="shrink-0 px-3 pb-2">
         <SidebarSideSwitch />
       </div>
 

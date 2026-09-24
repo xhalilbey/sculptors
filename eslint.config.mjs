@@ -359,6 +359,9 @@ const boundaryConfig = [
   // These patterns read the specifier as written, so they are what keeps
   // next/* and react out; a sibling layer is fenced on its resolved path by
   // the slice zones in LOCKED_ZONES, which catch a relative import too.
+  // Until 24 Sep they also listed the sibling layers' `@/features/...`
+  // specifiers, which CROSS_SLICE and the zones already refuse, so one
+  // aliased import drew the same complaint three times.
   {
     files: ["src/features/*/domain/**/*.ts"],
     rules: {
@@ -369,14 +372,7 @@ const boundaryConfig = [
             CROSS_SLICE,
             DB_ONLY_IN_DATA_LAYER,
             {
-              group: [
-                "@/features/*/application/**",
-                "@/features/*/infrastructure/**",
-                "@/features/*/api/**",
-                "@/features/*/ui/**",
-                "next/**",
-                "react",
-              ],
+              group: ["next/**", "react"],
               message: "domain/ is pure — no I/O, no framework, no persistence.",
             },
           ],
@@ -394,7 +390,7 @@ const boundaryConfig = [
             CROSS_SLICE,
             DB_ONLY_IN_DATA_LAYER,
             {
-              group: ["@/features/*/api/**", "@/features/*/ui/**", "next/server", "react"],
+              group: ["next/server", "react"],
               message: "application/ is transport-agnostic — take a port as an argument.",
             },
           ],
@@ -412,7 +408,7 @@ const boundaryConfig = [
             CROSS_SLICE,
             DB_ONLY_IN_DATA_LAYER,
             {
-              group: ["@/features/*/api/**", "@/features/*/ui/**", "next/server"],
+              group: ["next/server"],
               message: "infrastructure/ must not know about HTTP or React.",
             },
           ],
