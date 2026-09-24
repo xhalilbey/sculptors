@@ -9,7 +9,8 @@ import { parseUserId } from '@/types/ids';
 /**
  * syncMembershipsForUser against the real schema. The property that matters
  * most is new with Neon: the sync is one transaction, so a failure leaves
- * the mirror as it was rather than half updated.
+ * the mirror as it was rather than half updated. findMembership is pinned
+ * here too: a malformed id is "no membership", a database failure throws.
  */
 
 let t: TestDb;
@@ -219,5 +220,19 @@ describe('syncMembershipsForUser', () => {
   it('answers null for malformed ids instead of querying', async () => {
     expect(await findMembership(USER, "org_S2' or '1'='1")).toBeNull();
     expect(await findMembership('not-a-uuid', 'org_S2')).toBeNull();
+  });
+});
+
+describe('findMembership', () => {
+  it('lets a database failure through instead of answering "no membership"', async () => {
+    // A table the query cannot find is as real a failure as an unreachable
+    // database, and it is put back whatever the assertion does.
+    await t.db.execute(sql`alter table organization_memberships rename to organization_memberships_away`);
+
+    try {
+      await expect(findMembership(USER, 'org_S2')).rejects.toThrow();
+    } finally {
+      await t.db.execute(sql`alter table organization_memberships_away rename to organization_memberships`);
+    }
   });
 });

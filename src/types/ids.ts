@@ -46,8 +46,12 @@ export function parseMembershipId(value: string): MembershipId {
   return value;
 }
 
-export function parseUserId(value: string): UserId {
-  if (!UUID.test(value)) throw new RangeError('Invalid user id');
+export function isUserId(value: string): value is UserId {
+  return UUID.test(value);
+}
 
-  return value as UserId;
+export function parseUserId(value: string): UserId {
+  if (!isUserId(value)) throw new RangeError('Invalid user id');
+
+  return value;
 }

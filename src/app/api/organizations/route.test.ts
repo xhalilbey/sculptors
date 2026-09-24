@@ -4,8 +4,9 @@ import { allKeys, ORGANIZATION_DTO_KEYS, RETIRED_KEYS, okSession, sessionOrganiz
 
 /**
  * The organization list and creation, on the wire: OrganizationDto key sets
- * exactly, the switcher's order decided on the server, and a create body
- * that refuses fields it does not know.
+ * exactly, the switcher's order decided on the server, a create body that
+ * refuses fields it does not know, and a create WorkOS made that is answered
+ * 201, with the session switched, even when the mirror cannot be read back.
  */
 
 const resolveSession = vi.fn();
@@ -119,6 +120,24 @@ describe('POST /api/organizations', () => {
 
     expect(response.status).toBe(201);
     expect(body.organization).toMatchObject({ id: 'org_N', name: 'New', role: 'owner', isActive: true });
+  });
+
+  it('still answers 201 and switches the session when reading the mirror back fails', async () => {
+    findMembership.mockRejectedValue(new Error('connect ECONNREFUSED'));
+
+    const response = await POST(request('POST', { name: 'New' }));
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(response.cookies.get('wos-session')?.value).toBe('sealed-new');
+    expect(Object.keys(body.organization).sort()).toEqual(ORGANIZATION_DTO_KEYS);
+    expect(body.organization).toMatchObject({
+      id: 'org_N',
+      name: 'New',
+      onboardingCompletedAt: null,
+      role: 'owner',
+      isActive: true,
+    });
   });
 
   it('refuses a field it does not know, such as the retired category', async () => {

@@ -5,7 +5,11 @@ import { logger } from '@/lib/logger';
 import { organizationNameSchema } from '@/lib/validations';
 import { refreshSessionForOrganization, setWorkOSSessionCookie } from '@/lib/workos/auth';
 import { toOrganizationDto, toOrganizationListDto } from '@/lib/workos/dto';
-import { createOrganizationForUser, findMembership } from '@/lib/workos/organizations';
+import {
+  createOrganizationForUser,
+  findMembership,
+  type MirroredMembership,
+} from '@/lib/workos/organizations';
 
 /**
  * GET  /api/organizations  -> the caller's organizations, in switcher order,
@@ -42,9 +46,22 @@ export const POST = defineRoute({
 
       // The mirror row carries the timestamps later lists will show. If the
       // mirror write failed (createOrganizationForUser logs it and the next
-      // sign-in repairs it), the organization still exists and the session
-      // is in it, so the answer is built from what was created.
-      const mirrored = await findMembership(ctx.user.id, organizationId);
+      // sign-in repairs it), or reading it back fails, the organization
+      // still exists and the session is in it, so the answer is built from
+      // what was created. findMembership throws on a database failure, and
+      // letting that reach the catch below would answer 500 for a create
+      // that happened and never set the switched session cookie.
+      let mirrored: MirroredMembership | null = null;
+
+      try {
+        mirrored = await findMembership(ctx.user.id, organizationId);
+      } catch (error) {
+        logger.warn('Created organization could not be read back from the mirror', {
+          errorType: error instanceof Error ? error.name : 'UnknownError',
+          organizationId,
+        });
+      }
+
       const organization = mirrored
         ? toOrganizationDto(mirrored.organization, { role: 'owner', isActive: true })
         : toOrganizationDto(

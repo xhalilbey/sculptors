@@ -4,11 +4,11 @@ import type { OrganizationMembership } from '@workos-inc/node';
 import {
   identityDb,
   isOrganizationId,
+  isUserId,
   membershipsRepository,
   organizationsRepository,
   parseMembershipId,
   parseOrganizationId,
-  parseUserId,
   withIdentityTransaction,
   type MirroredMembership,
   type OrganizationPatch,
@@ -225,27 +225,27 @@ export async function updateOrganization(
 
 /**
  * Is this user an active member of this organization? Answered from the
- * mirror. defineRoute uses it to authorize every route, which is sound only
- * where something fresher also decides: the organization switch is made by
- * WorkOS, which refuses an organization the user is not in, and an owner's
- * change is re-checked with isOwnerInWorkOS. A route that acts on the
- * mirror's role alone inherits its staleness.
+ * mirror. defineRoute asks it, through ensureOrganizationAccess, on the
+ * routes that name an organization (explicit-organization), which is sound
+ * only where something fresher also decides: the organization switch is
+ * made by WorkOS, which refuses an organization the user is not in, and an
+ * owner's change is re-checked with isOwnerInWorkOS. A route that acts on
+ * the mirror's role alone inherits its staleness.
  *
- * Fails closed: a malformed id or a failed lookup is "no membership".
+ * A malformed id is "no membership", answered without a query. A failed
+ * lookup is not: it throws, so defineRoute answers 500 and logs an error.
+ * Until 24 Sep 2026 the failure was caught here and answered null, which
+ * told a member "You do not have access to this organization" (a 403)
+ * whenever the database was unreachable. A caller that can do without the
+ * row catches around its own call (POST /api/organizations).
  */
 export async function findMembership(
   userId: string,
   organizationId: string
 ): Promise<MirroredMembership | null> {
-  if (!isOrganizationId(organizationId)) return null;
+  if (!isOrganizationId(organizationId) || !isUserId(userId)) return null;
 
-  try {
-    return await membershipsRepository.findActive(identityDb(), parseUserId(userId), organizationId);
-  } catch (error) {
-    logger.warn('Membership lookup failed', { error, userId, organizationId });
-
-    return null;
-  }
+  return membershipsRepository.findActive(identityDb(), userId, organizationId);
 }
 
 /**

@@ -132,6 +132,23 @@ describe('defineRoute', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
+  it('answers 500, not 403, when the membership lookup for a named organization fails', async () => {
+    resolveSession.mockResolvedValue(session());
+    ensureOrganizationAccess.mockRejectedValue(new Error('connect ECONNREFUSED'));
+    const handler = vi.fn();
+    const route = defineRoute({
+      params: idParams,
+      authz: { kind: 'explicit-organization', organizationId: (input) => input.params.id },
+      handler,
+    });
+
+    const response = await route(request(), segment('org_B'));
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: 'Something went wrong. Please try again.' });
+    expect(handler).not.toHaveBeenCalled();
+  });
+
   it('answers 400 for a malformed organization id without asking the mirror', async () => {
     resolveSession.mockResolvedValue(session());
     const route = defineRoute({

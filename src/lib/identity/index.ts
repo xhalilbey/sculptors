@@ -54,6 +54,7 @@ export type { MembershipRow, OrganizationRow, UserRow } from '@/db/schema';
 export {
   isMembershipId,
   isOrganizationId,
+  isUserId,
   parseMembershipId,
   parseOrganizationId,
   parseUserId,
