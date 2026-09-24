@@ -6,8 +6,6 @@ export interface NavItem {
   // nav icons rendered at the default weight while the utility icons beside
   // them used 2.5 -- two line weights on one rail, enforced by a type.
   icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
-  disabled?: boolean;
-  badge?: string;
   /**
    * Leads the rail, set a little apart from the rows below it: the few
    * places a person goes first (Overview, Agent Suite, Pipelines).

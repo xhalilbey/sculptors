@@ -38,9 +38,9 @@ const PLATFORM_ITEMS: NavItem[] = [
   { title: "Health", href: "/settings/health", icon: Activity },
 ];
 
-// The icon column is fixed at 40px inside a 12px margin, so an icon's
-// centre lands at x=32 in the 64px rail and in the 244px panel alike --
-// opening the sidebar reveals labels without moving a single icon.
+// The icon column is fixed at 40px inside a 12px margin, so every row's
+// icon centre lands at x=32: the Store rows and the foot rows share one
+// straight column of icons.
 const globalMenuItem =
   "mx-3 grid h-9 w-[calc(100%-24px)] grid-cols-[40px_minmax(0,1fr)_auto] items-center overflow-hidden rounded-[10px] border border-transparent text-left text-[13px] font-semibold tracking-[-0.003em] transition-colors";
 
@@ -65,7 +65,6 @@ const RAIL = {
     switchBorder: "border-white/16",
     soon: "bg-white text-[#0a0a0a] shadow-[0_0_0_2px_var(--color-rail)]",
     avatar: "border-white/15 bg-white/12 text-white",
-    badge: "bg-white/12 text-white/70",
     brand: "text-white",
   },
   light: {
@@ -76,7 +75,6 @@ const RAIL = {
     switchBorder: "border-black/10",
     soon: "border border-black/10 bg-white text-ink shadow-[0_0_0_2px_var(--color-rail),0_1px_3px_rgba(0,0,0,0.15)]",
     avatar: "border-black/10 bg-white text-ink",
-    badge: "bg-black/[0.06] text-ink/60",
     brand: "text-ink",
   },
 } as const;
@@ -85,13 +83,12 @@ function useRail() {
   return RAIL[useDashboardTheme()];
 }
 
-/** Labels are present in both states and only fade, so nothing reflows. */
-function labelClass(collapsed: boolean) {
-  return cn(
-    "min-w-0 truncate transition-opacity duration-150",
-    collapsed ? "opacity-0" : "opacity-100 delay-100"
-  );
-}
+/**
+ * A label truncates in its column instead of wrapping. The opacity classes
+ * are the fade the rail had when it could collapse to icons; it is always
+ * open now, so they only hold the label at full opacity.
+ */
+const menuLabel = "min-w-0 truncate transition-opacity duration-150 opacity-100 delay-100";
 
 /** Every entry the rail can show: the Store side, then the foot. */
 const SETTINGS_ITEM: NavItem = { title: "Settings", href: "/settings", icon: Settings };
@@ -224,12 +221,10 @@ function SidebarSideSwitch() {
 function RailNavLink({
   item,
   pathname,
-  rail,
   onNavigate,
 }: {
   item: NavItem;
   pathname: string;
-  rail: boolean;
   onNavigate?: () => void;
 }) {
   const styles = useRail();
@@ -238,30 +233,17 @@ function RailNavLink({
 
   return (
     <Link
-      href={item.disabled ? "#" : item.href}
+      href={item.href}
       onClick={onNavigate}
-      title={rail ? item.title : undefined}
       className={cn(
         globalMenuItem,
         isActive
           ? styles.activeKey
-          : "text-[var(--dashboard-sidebar-text)] hover:bg-[var(--dashboard-sidebar-hover)] hover:text-[var(--dashboard-sidebar-text-strong)]",
-        item.disabled && "pointer-events-none opacity-45"
+          : "text-[var(--dashboard-sidebar-text)] hover:bg-[var(--dashboard-sidebar-hover)] hover:text-[var(--dashboard-sidebar-text-strong)]"
       )}
     >
       <Icon className={menuIcon} strokeWidth={2.5} aria-hidden="true" />
-      <span className={labelClass(rail)}>{item.title}</span>
-      {item.badge ? (
-        <span
-          className={cn(
-            "rounded-full px-1.5 py-0.5 text-xs font-semibold",
-            styles.badge,
-            rail && "opacity-0"
-          )}
-        >
-          {item.badge}
-        </span>
-      ) : null}
+      <span className={menuLabel}>{item.title}</span>
     </Link>
   );
 }
@@ -270,15 +252,11 @@ function GlobalSidebarMenu({
   pathname,
   onClose,
   mobile = false,
-  collapsed = false,
 }: {
   pathname: string;
   onClose: () => void;
   mobile?: boolean;
-  collapsed?: boolean;
 }) {
-  // Narrow, always-visible rail: icons only, labels faded out.
-  const rail = collapsed && !mobile;
   const styles = useRail();
   const leadItems = storeItems.filter((item) => item.lead);
   const restItems = storeItems.filter((item) => !item.lead);
@@ -299,14 +277,13 @@ function GlobalSidebarMenu({
         // heavy shadow -- it was floating above what it covered. Now the
         // layout reserves its width, so it is a wall, not a panel, and the
         // shadow would only draw a seam down the page.
-        !mobile && (collapsed ? "w-[64px]" : "w-[244px]"),
+        !mobile && "w-[244px]",
         mobile && "w-[min(86vw,284px)] shadow-[0_16px_36px_rgba(17,24,39,0.14)]"
       )}
     >
-      {/* The wordmark, as the landing page sets it: the mark and "Sculptors"
-          in Super Sans at weight 600 with tight tracking. The organization
-          switcher that sat here moved to the rail's foot (owner's direction,
-          23 Sep 2026). */}
+      {/* The rail's top is the wordmark: the mark and "Sculptors" at weight
+          600 with tight tracking. Organizations are switched in Settings >
+          Organization, not here. */}
       <div className="flex h-[60px] shrink-0 items-center gap-2 px-4">
         <Link
           href="/dashboard"
@@ -315,7 +292,7 @@ function GlobalSidebarMenu({
           aria-label="Sculptors home"
         >
           <SculptorsMark className="h-7 w-7 shrink-0" />
-          <span className={cn("super-emphasis text-[21px] leading-none tracking-[-0.04em]", labelClass(rail))}>
+          <span className={cn("super-emphasis text-[21px] leading-none tracking-[-0.04em]", menuLabel)}>
             Sculptors
           </span>
         </Link>
@@ -331,34 +308,26 @@ function GlobalSidebarMenu({
         ) : null}
       </div>
 
-      {/* The switch is unreadable at 64px but its height is reserved, so the
-          nav below sits at the same y whether the rail is open or closed. */}
-      <div
-        className={cn(
-          // Only the fade of labelClass: its truncate is overflow:hidden,
-          // which cut the top half off the Ads tag.
-          "shrink-0 px-3 pb-2 transition-opacity duration-150",
-          rail ? "pointer-events-none opacity-0" : "opacity-100 delay-100"
-        )}
-        aria-hidden={rail}
-      >
+      {/* The label's fade without menuLabel's truncate, which is
+          overflow:hidden and cut the top half off the Ads tag. */}
+      <div className="shrink-0 px-3 pb-2 transition-opacity duration-150 opacity-100 delay-100">
         <SidebarSideSwitch />
       </div>
 
       <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overflow-x-hidden pb-4" aria-label="Store navigation">
         {leadItems.map((item) => (
-          <RailNavLink key={item.href} item={item} pathname={pathname} rail={rail} onNavigate={onNavigate} />
+          <RailNavLink key={item.href} item={item} pathname={pathname} onNavigate={onNavigate} />
         ))}
         {/* The lead rows stand apart by a little space, not by a surface. */}
         {leadItems.length > 0 && restItems.length > 0 ? <div className="h-3 shrink-0" aria-hidden="true" /> : null}
         {restItems.map((item) => (
-          <RailNavLink key={item.href} item={item} pathname={pathname} rail={rail} onNavigate={onNavigate} />
+          <RailNavLink key={item.href} item={item} pathname={pathname} onNavigate={onNavigate} />
         ))}
       </nav>
 
       <div className="shrink-0 space-y-0.5 pb-2.5">
         {footItems.map((item) => (
-          <RailNavLink key={item.href} item={item} pathname={pathname} rail={rail} onNavigate={onNavigate} />
+          <RailNavLink key={item.href} item={item} pathname={pathname} onNavigate={onNavigate} />
         ))}
       </div>
     </aside>
