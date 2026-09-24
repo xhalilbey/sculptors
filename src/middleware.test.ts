@@ -5,8 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * The credential budget: POSTs to the password, email-code and
  * password-reset routes share ten attempts per address per 15 minutes, and
  * the eleventh is a 429 in the routes' own { success, error } envelope, which
- * the login page toasts. Page views, the webhook and the AuthKit round trip
- * spend none of it. Before 24 Sep the budget ran on /auth/* page views
+ * the login page toasts. Page views, the webhook, the AuthKit round trip and
+ * posts from another origin (which the route refuses with a 403) spend none
+ * of it. Before 24 Sep the budget ran on /auth/* page views
  * instead, and these POSTs were not throttled at all.
  *
  * The limiter's store is module-global, so each test imports a fresh
@@ -25,11 +26,19 @@ async function loadMiddleware() {
   return middleware;
 }
 
-function request(path: string, method = 'POST', address = ADDRESS) {
-  return new NextRequest(`http://localhost:3000${path}`, {
-    method,
-    headers: { origin: 'http://localhost:3000', 'x-forwarded-for': address },
-  });
+function request(
+  path: string,
+  method = 'POST',
+  address = ADDRESS,
+  origin: string | null = 'http://localhost:3000'
+) {
+  const headers: Record<string, string> = { 'x-forwarded-for': address };
+
+  if (origin !== null) {
+    headers.origin = origin;
+  }
+
+  return new NextRequest(`http://localhost:3000${path}`, { method, headers });
 }
 
 async function spend(
@@ -108,6 +117,21 @@ describe('middleware credential budget', () => {
       expect(encoded.nextUrl.pathname).toBe(path);
       expect((await middleware(encoded)).status).toBe(429);
     }
+  });
+
+  it('spends nothing on a post the route refuses for its origin', async () => {
+    const middleware = await loadMiddleware();
+    const path = '/api/auth/workos/password';
+
+    for (let i = 0; i < 10; i += 1) {
+      const foreign = await middleware(request(path, 'POST', ADDRESS, 'https://evil.example'));
+
+      expect(foreign.status).not.toBe(429);
+    }
+
+    expect((await middleware(request(path, 'POST', ADDRESS, null))).status).not.toBe(429);
+    expect(await spend(middleware, path, 10)).not.toContain(429);
+    expect((await middleware(request(path))).status).toBe(429);
   });
 
   it('never spends the budget on page views', async () => {

@@ -956,7 +956,12 @@ password handler, while the middleware sees them as sent. The `LOGIN`
 budget, five per 15 minutes on every `/auth/*` page view, is gone. The
 webhook, the login GET, the callback, `me` and logout stay outside the
 budget, and development still skips it. The two 429 answers share one
-builder, `tooManyRequests`.
+builder, `tooManyRequests`. Only a post that would pass the routes' own
+`requireSameOrigin` is counted. A foreign or missing Origin spends nothing
+and is left to the route's 403. As first written, the budget was spent
+before that check, so any page the victim had open could send ten
+cross-site form posts and lock their address, and everyone behind the same
+NAT, out of sign-in for 15 minutes, without testing a credential.
 
 **Why.** "Carried into the Neon phase" deferred this until the routes were
 wired, and they are: the login page posts to all three, and nothing
@@ -982,7 +987,7 @@ read that answer, so a throttled reset request shows the same neutral toast
 as any other. WorkOS's own limits still apply behind this one.
 `src/middleware.test.ts` pins the budget, the shared bucket, the key per
 address, the encoded path, the development exemption, and that pages, the
-webhook and the AuthKit round trip spend none of it.
+webhook, the AuthKit round trip and foreign-origin posts spend none of it.
 
 ## 2026-09-24 — Log out ends the session at WorkOS
 

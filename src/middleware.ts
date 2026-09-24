@@ -7,6 +7,7 @@ import {
   type RateLimitConfig,
   type RateLimitResult,
 } from './lib/security/rate-limiter';
+import { requireSameOrigin } from './lib/security/request-guards';
 import { WORKOS_SESSION_COOKIE } from './lib/workos/constants';
 
 const PUBLIC_PATHS = ['/', '/auth/login'];
@@ -99,11 +100,19 @@ export async function middleware(request: NextRequest) {
    * the three routes spend one bucket per address. The body is JSON in the
    * routes' own envelope, because the login page reads response.json() and
    * toasts `error`; a text body would toast a JSON parse error.
+   *
+   * Only a post the route's own requireSameOrigin would let through is
+   * counted. The route answers any other with a 403 before WorkOS sees it,
+   * so it tests no credential. As first written, the budget was spent before
+   * that check, so ten cross-site form posts from any page the victim had open
+   * locked their address (and everyone behind the same NAT) out of sign-in
+   * for 15 minutes. The route stays the one that refuses them.
    */
   if (
     request.method === 'POST' &&
     isAuthSubmitPath(pathname) &&
-    process.env.NODE_ENV !== 'development'
+    process.env.NODE_ENV !== 'development' &&
+    requireSameOrigin(request) === null
   ) {
     const rateLimitResult = rateLimit(getIdentifier(request), 'auth-submit', 'AUTH_SUBMIT');
 
