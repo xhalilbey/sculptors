@@ -10,7 +10,7 @@ import { okSession, sessionOrganization, USER_ID } from '@/test/session-fixtures
  * usable (expired, inactive, outside the allowlist), a named organization the
  * caller is not in, a malformed id, a resource the tenant cannot see. And the
  * one subtle success: a handler that switched the session keeps its newer
- * cookie.
+ * cookie. Every answer, refusals included, is marked private and unstored.
  */
 
 const resolveSession = vi.fn();
@@ -294,6 +294,56 @@ describe('defineRoute, hardened', () => {
     for (const response of [notFound, forbidden, crashed]) {
       expect(response.cookies.get('wos-session')?.value).toBe('sealed-refreshed');
     }
+  });
+
+  it('marks every answer private and unstored', async () => {
+    resolveSession.mockResolvedValue(session('sealed-refreshed'));
+    const answered = await defineRoute({ authz: { kind: 'session-organization' }, handler: async () => ({ ok: true }) })(
+      request('GET')
+    );
+
+    resolveSession.mockResolvedValue({ kind: 'none' });
+    const refused = await defineRoute({ authz: { kind: 'session-organization' }, handler: vi.fn() })(request('GET'));
+
+    const foreign = await defineRoute({ authz: { kind: 'session-organization' }, handler: vi.fn() })(
+      new NextRequest('http://localhost:3000/api/x', { method: 'POST', headers: { origin: 'https://evil.example' } })
+    );
+    const publicAnswer = await definePublicRoute({ justification: 'test', handler: async () => ({ ok: true }) })(
+      new NextRequest('http://localhost:3000/api/p')
+    );
+
+    expect([answered.status, refused.status, foreign.status, publicAnswer.status]).toEqual([200, 401, 403, 200]);
+
+    for (const response of [answered, refused, foreign, publicAnswer]) {
+      expect(response.headers.get('cache-control')).toBe('private, no-store');
+    }
+  });
+
+  it('keeps a cache header the handler chose, unless the answer carries the session cookie', async () => {
+    const cached = async () => NextResponse.json({ ok: true }, { headers: { 'Cache-Control': 'public, max-age=60' } });
+
+    resolveSession.mockResolvedValue(session());
+    const plain = await defineRoute({ authz: { kind: 'session-organization' }, handler: cached })(request('GET'));
+
+    resolveSession.mockResolvedValue(session('sealed-refreshed'));
+    const refreshed = await defineRoute({ authz: { kind: 'session-organization' }, handler: cached })(request('GET'));
+
+    resolveSession.mockResolvedValue(session());
+    const switched = await defineRoute({
+      authz: { kind: 'session-organization' },
+      handler: async () => {
+        const response = await cached();
+
+        response.cookies.set('wos-session', 'sealed-switched');
+
+        return response;
+      },
+    })(request('GET'));
+
+    expect(plain.headers.get('cache-control')).toBe('public, max-age=60');
+    expect(refreshed.cookies.get('wos-session')?.value).toBe('sealed-refreshed');
+    expect(refreshed.headers.get('cache-control')).toBe('private, no-store');
+    expect(switched.headers.get('cache-control')).toBe('private, no-store');
   });
 
   it('keeps a well-formed request id and replaces a forged one', async () => {

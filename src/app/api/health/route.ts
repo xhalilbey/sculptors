@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server';
 import { getHealthReport, healthSource, type HealthResponse } from '@/features/health/server';
 import { defineRoute } from '@/lib/api/define-route';
 
@@ -15,6 +14,6 @@ export const GET = defineRoute({
     const report = await getHealthReport(healthSource, { now: new Date() });
     const body: HealthResponse = { success: true, report };
 
-    return NextResponse.json(body, { headers: { 'Cache-Control': 'no-store' } });
+    return body;
   },
 });

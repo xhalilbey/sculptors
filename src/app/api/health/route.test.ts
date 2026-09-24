@@ -50,7 +50,7 @@ describe('GET /api/health', () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(body.success).toBe(true);
     expect(body.report.source).toBe('demo');
     expect(body.report.checkedAt).toBe('2026-09-23T14:35Z');

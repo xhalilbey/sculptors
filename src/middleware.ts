@@ -72,7 +72,11 @@ function isAuthSubmitPath(pathname: string) {
   }
 }
 
-/** A 429 carrying the window's reset time, in the envelope its caller reads. */
+/**
+ * A 429 carrying the window's reset time, in the envelope its caller reads.
+ * Never stored, like the 401 below: defineRoute marks its own answers
+ * `private, no-store`, and these are answered before any route runs.
+ */
 function tooManyRequests(
   result: RateLimitResult,
   limit: RateLimitConfig,
@@ -81,6 +85,7 @@ function tooManyRequests(
   return NextResponse.json(body, {
     status: 429,
     headers: {
+      'Cache-Control': 'no-store',
       'Retry-After': Math.ceil((result.resetTime - Date.now()) / 1000).toString(),
       'X-RateLimit-Limit': limit.maxAttempts.toString(),
       'X-RateLimit-Remaining': '0',
@@ -145,7 +150,10 @@ export async function middleware(request: NextRequest) {
 
   if (isProtectedPath(pathname) && !hasWorkOSSession) {
     if (pathname.startsWith('/api/')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401, headers: { 'Cache-Control': 'no-store' } }
+      );
     }
 
     return NextResponse.redirect(new URL('/auth/login', request.url));

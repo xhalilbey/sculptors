@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server';
 import {
   getOverview,
   metricsSource,
@@ -25,6 +24,6 @@ export const GET = defineRoute({
     });
     const body: OverviewResponse = { success: true, overview };
 
-    return NextResponse.json(body, { headers: { 'Cache-Control': 'no-store' } });
+    return body;
   },
 });

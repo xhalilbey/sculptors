@@ -207,12 +207,24 @@ function fail(
  * a 500 was lost and the browser kept replaying the spent refresh token. A
  * handler that re-issued the session itself (an organization switch) has set
  * the newer cookie, which wins.
+ *
+ * Every answer is also marked `private, no-store`. Until 24 Sep seven data
+ * handlers set `no-store` by hand and nothing else did, so the answers this
+ * wrapper built (a 401, a 404, a 500, a plain object) carried no cache
+ * directive, though any of them could carry the re-issued session cookie.
+ * A handler that states its own Cache-Control keeps it, unless the answer
+ * carries the session cookie: a cache that stored that Set-Cookie would
+ * hand the session to whoever it served next.
  */
 function finish(response: NextResponse, requestId: string, refreshedSessionData?: string): NextResponse {
   response.headers.set('x-request-id', requestId);
 
   if (refreshedSessionData && !response.cookies.get(WORKOS_SESSION_COOKIE)) {
     setWorkOSSessionCookie(response, refreshedSessionData);
+  }
+
+  if (response.cookies.get(WORKOS_SESSION_COOKIE) || !response.headers.has('Cache-Control')) {
+    response.headers.set('Cache-Control', 'private, no-store');
   }
 
   return response;
@@ -284,7 +296,7 @@ function handleError(
  * requestId -> origin (non-GET) -> session (resolveSession: expired, inactive,
  * forbidden and unbound stop here) -> input parsing -> organization
  * authorization -> resource check -> handler -> error mapping -> one exit
- * (request id, refreshed session cookie).
+ * (request id, refreshed session cookie, `Cache-Control: private, no-store`).
  */
 export function defineRoute<
   TParams = DefaultParams,

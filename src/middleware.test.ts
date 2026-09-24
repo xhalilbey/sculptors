@@ -8,7 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * the login page toasts. Page views, the webhook, the AuthKit round trip and
  * posts from another origin (which the route refuses with a 403) spend none
  * of it. Before 24 Sep the budget ran on /auth/* page views
- * instead, and these POSTs were not throttled at all.
+ * instead, and these POSTs were not throttled at all. The middleware's own
+ * refusals, the 429 and the 401 of an API call without a session, are
+ * marked no-store.
  *
  * The limiter's store is module-global, so each test imports a fresh
  * middleware. NODE_ENV is 'test' here, so the limiter is active, as in
@@ -82,6 +84,7 @@ describe('middleware credential budget', () => {
     expect(response.headers.get('retry-after')).toBe('900');
     expect(response.headers.get('x-ratelimit-limit')).toBe('10');
     expect(response.headers.get('x-ratelimit-remaining')).toBe('0');
+    expect(response.headers.get('cache-control')).toBe('no-store');
   });
 
   it('counts the password, email-code and reset routes against one budget', async () => {
@@ -157,5 +160,17 @@ describe('middleware credential budget', () => {
     const middleware = await loadMiddleware();
 
     expect(await spend(middleware, '/api/auth/workos/password', 11)).not.toContain(429);
+  });
+});
+
+describe('middleware refusals', () => {
+  it('answers an API call without a session with a 401 that is never stored', async () => {
+    const middleware = await loadMiddleware();
+
+    const response = await middleware(request('/api/organizations', 'GET'));
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'Unauthorized' });
+    expect(response.headers.get('cache-control')).toBe('no-store');
   });
 });

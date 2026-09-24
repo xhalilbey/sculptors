@@ -60,7 +60,7 @@ describe('GET /api/metrics', () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(body.success).toBe(true);
     expect(body.overview.source).toBe('demo');
     expect(body.overview.selection).toEqual({ preset: '30d' });

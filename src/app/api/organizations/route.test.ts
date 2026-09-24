@@ -56,6 +56,7 @@ describe('GET /api/organizations', () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(Object.keys(body).sort()).toEqual(['organizations', 'success']);
     expect(body.organizations.map((o: { id: string }) => o.id)).toEqual(['org_A', 'org_C', 'org_B']);
     // The session is bound to the first organization of the context (org_B).
@@ -97,6 +98,7 @@ describe('POST /api/organizations', () => {
       workosUserId: 'user_w1',
     });
     expect(response.cookies.get('wos-session')?.value).toBe('sealed-new');
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(Object.keys(body).sort()).toEqual(['organization', 'success']);
     expect(Object.keys(body.organization).sort()).toEqual(ORGANIZATION_DTO_KEYS);
     expect(body.organization).toEqual({

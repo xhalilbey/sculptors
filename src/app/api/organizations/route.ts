@@ -16,14 +16,10 @@ import { createOrganizationForUser, findMembership } from '@/lib/workos/organiza
 export const GET = defineRoute({
   envelope: 'success',
   authz: { kind: 'session-organization' },
-  handler: async (_input, ctx) =>
-    NextResponse.json(
-      {
-        success: true,
-        organizations: toOrganizationListDto(ctx.organizations, ctx.organization.id),
-      },
-      { headers: { 'Cache-Control': 'no-store' } }
-    ),
+  handler: async (_input, ctx) => ({
+    success: true,
+    organizations: toOrganizationListDto(ctx.organizations, ctx.organization.id),
+  }),
 });
 
 // Strict: a field this route does not know is a 400, not silently dropped.

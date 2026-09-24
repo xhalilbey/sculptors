@@ -1285,3 +1285,42 @@ WorkOS user cannot sign in (WorkOS refuses them and the row is
 a membership and a session event, the scrub and the late update; the
 webhook seam test pins the shape as the real SDK deserializes it;
 `users.repository.db.test.ts` pins the scrub and its ordering guard.
+
+## 2026-09-24 — defineRoute answers are not stored
+
+**Decision.** The exit that both `defineRoute` and `definePublicRoute`
+share (`finish()` in `src/lib/api/define-route.ts`) now sets
+`Cache-Control: private, no-store` on every answer that has no
+Cache-Control of its own, and on every answer that carries the
+`wos-session` cookie whatever the handler set. The seven handlers that
+wrote `no-store` by hand (metrics, one metric, orders, customers,
+products, health and the organization list) no longer do, and return
+plain objects instead. The middleware's 401 for an API call without a
+session cookie and its 429s now say `no-store` too.
+`/api/auth/me` keeps its own `NO_STORE`, because no wrapper serves it.
+
+**Why.** No-store was each handler's job, and only the handlers that
+answer with data did it. Every answer the wrapper built itself (a 401,
+a 403, a 404, a 400 with field errors, a 500) and every handler that
+returned a plain object went out with no cache directive, and `finish()`
+stores a re-issued session cookie on all of them, refusals and errors
+included, so a spent refresh token is never replayed. A shared cache
+that kept one of those answers would hand the Set-Cookie to the next
+caller. `no-store` alone already forbids storing anywhere; `private`
+adds that the answer belongs to one user, for a shared cache or CDN rule
+that overrides `no-store`. Rejected: keeping the header per handler and
+adding it to the wrapper's own refusals only, because a new handler that
+forgets it is the same hole again. Rejected: always overwriting the
+handler's value, because a later public, cacheable answer (a static
+list, say) should be able to ask for it; the one case that is never
+allowed is a cacheable answer that sets the session cookie.
+
+**Consequence.** The route convention "data responses carry
+`Cache-Control: no-store`" is now the wrapper's, and a handler writes
+Cache-Control only to ask for something else. The header value on the
+data routes changes from `no-store` to `private, no-store`, which a
+browser treats the same. `define-route.test.ts` pins the
+header on a plain answer, a 401, a cross-origin 403 and a public route,
+a handler's own value kept, and that value replaced when the answer
+carries the session cookie; the route tests pin it on the data and
+organization routes, and `middleware.test.ts` on the 401 and the 429.
