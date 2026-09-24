@@ -6,6 +6,27 @@ import type { OrganizationId, UserId } from '@/types/ids';
 import { unwrap, type IdentityDb } from '../internal/handle';
 import { fromProposedIfNotOlder, laterStamp, proposedIsNotOlder, storedIsNotNewer } from './mirror-order';
 
+/** The CHECK on organizations.name: char_length, in code points. */
+const NAME_LIMIT = 100;
+
+/**
+ * A name as this table can hold it. WorkOS accepts names this table cannot
+ * hold -- a NUL, which Postgres text refuses, or more than 100 code points,
+ * which the CHECK refuses -- whether they come from its dashboard, its API
+ * or a default we generated. One such name used to fail every sign-in sync
+ * and every webhook retry for its members. Control characters are dropped,
+ * the rest is cut to the first 100 code points, and a name left empty
+ * becomes the id, like a placeholder's. WorkOS keeps the full name; the
+ * mirror is only a copy of it.
+ */
+function mirroredName(name: string, id: OrganizationId): string {
+  const cleaned = name.replace(/\p{Cc}/gu, '').trim();
+
+  return Array.from(cleaned || id)
+    .slice(0, NAME_LIMIT)
+    .join('');
+}
+
 /**
  * Mirror organization names from WorkOS. Only `name` is refreshed on
  * conflict: plan, region, onboarding and status are ours and a
@@ -22,7 +43,7 @@ export async function upsertNames(
 
   await db
     .insert(organizations)
-    .values(rows)
+    .values(rows.map(row => ({ ...row, name: mirroredName(row.name, row.id) })))
     .onConflictDoUpdate({
       target: organizations.id,
       set: { name: sql`excluded.name`, workosUpdatedAt: sql`excluded.workos_updated_at` },
@@ -39,7 +60,10 @@ export async function upsertNames(
 export async function insertIfMissing(handle: IdentityDb, row: { id: OrganizationId; name: string }): Promise<void> {
   const db = unwrap(handle);
 
-  await db.insert(organizations).values(row).onConflictDoNothing({ target: organizations.id });
+  await db
+    .insert(organizations)
+    .values({ ...row, name: mirroredName(row.name, row.id) })
+    .onConflictDoNothing({ target: organizations.id });
 }
 
 /**
@@ -62,7 +86,7 @@ export async function upsertCreated(
 
   await db
     .insert(organizations)
-    .values(row)
+    .values({ ...row, name: mirroredName(row.name, row.id) })
     .onConflictDoUpdate({
       target: organizations.id,
       set: {

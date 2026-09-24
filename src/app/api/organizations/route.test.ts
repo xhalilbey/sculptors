@@ -125,4 +125,14 @@ describe('POST /api/organizations', () => {
     expect(response.status).toBe(400);
     expect(createOrganizationForUser).not.toHaveBeenCalled();
   });
+
+  it('refuses a name with a NUL before WorkOS is asked to create it', async () => {
+    const response = await POST(request('POST', { name: 'A\u{0}B' }));
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.fields.name).toEqual(['Organization name cannot contain control or text-direction characters']);
+    expect(createOrganizationForUser).not.toHaveBeenCalled();
+    expect(refreshSessionForOrganization).not.toHaveBeenCalled();
+  });
 });

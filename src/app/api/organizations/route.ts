@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { defineRoute } from '@/lib/api/define-route';
 import { logger } from '@/lib/logger';
+import { organizationNameSchema } from '@/lib/validations';
 import { refreshSessionForOrganization, setWorkOSSessionCookie } from '@/lib/workos/auth';
 import { toOrganizationDto, toOrganizationListDto } from '@/lib/workos/dto';
 import { createOrganizationForUser, findMembership } from '@/lib/workos/organizations';
@@ -26,13 +27,7 @@ export const GET = defineRoute({
 });
 
 // Strict: a field this route does not know is a 400, not silently dropped.
-const createBody = z.strictObject({
-  name: z
-    .string()
-    .trim()
-    .min(1, 'Organization name must be between 1 and 100 characters')
-    .max(100, 'Organization name must be between 1 and 100 characters'),
-});
+const createBody = z.strictObject({ name: organizationNameSchema });
 
 export const POST = defineRoute({
   envelope: 'success',

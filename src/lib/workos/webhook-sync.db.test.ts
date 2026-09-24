@@ -49,6 +49,12 @@ describe('applyWebhookEvent', () => {
     expect(await one(sql`select name, plan from organizations where id = 'org_W1'`)).toEqual({ name: 'Second', plan: 'pro' });
   });
 
+  it('mirrors a name the table could not hold instead of failing every retry', async () => {
+    await applyWebhookEvent(event('organization.updated', 'e2b', organization({ id: 'org_W1b', name: `Acme\u{0} ${'x'.repeat(150)}` })));
+
+    expect(await one(sql`select name from organizations where id = 'org_W1b'`)).toEqual({ name: `Acme ${'x'.repeat(95)}` });
+  });
+
   it('soft deletes an organization', async () => {
     await applyWebhookEvent(event('organization.created', 'e3', organization({ id: 'org_W2', name: 'Doomed' })));
     await applyWebhookEvent(event('organization.deleted', 'e4', organization({ id: 'org_W2' })));
@@ -217,8 +223,11 @@ describe('recordWebhookEvent', () => {
 
 describe('markWebhookEventFailed', () => {
   it('keeps the database reason for a replay, without the statement or its values', async () => {
-    const longName = `Secret-${'x'.repeat(100)}`;
-    const failing = event('organization.created', 'event_fail', organization({ id: 'org_FAIL', name: longName }));
+    // A status the CHECK refuses, carrying a value that must not be kept.
+    // This used to be an organization name over 100 characters, which the
+    // mirror now stores cut to 100 instead of failing.
+    const bad = membership({ id: 'om_FAIL', organizationId: 'org_FAIL', userId: 'user_known' });
+    const failing = event('organization_membership.created', 'event_fail', { ...bad, status: 'Secret-status' as 'active' });
 
     await recordWebhookEvent(failing);
 
@@ -232,7 +241,7 @@ describe('markWebhookEventFailed', () => {
 
     const row = await one<{ error: string }>(sql`select error from workos_webhook_events where id = 'event_fail'`);
 
-    expect(row?.error).toContain('organizations_name_check');
+    expect(row?.error).toContain('organization_memberships_status_check');
     expect(row?.error).toContain('SQLSTATE 23514');
     expect(row?.error).not.toMatch(/Secret|Failed query|params/i);
   });

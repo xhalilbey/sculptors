@@ -128,4 +128,16 @@ describe('PATCH /api/organizations/[id]', () => {
     expect(response.status).toBe(400);
     expect(updateOrganization).not.toHaveBeenCalled();
   });
+
+  it('refuses a name with a NUL before WorkOS is asked anything', async () => {
+    isOwnerInWorkOS.mockResolvedValue(true);
+
+    const response = await patch({ name: 'A\u{0}B' });
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.fields.name).toEqual(['Organization name cannot contain control or text-direction characters']);
+    expect(isOwnerInWorkOS).not.toHaveBeenCalled();
+    expect(updateOrganization).not.toHaveBeenCalled();
+  });
 });

@@ -85,13 +85,28 @@ describe('syncMembershipsForUser', () => {
         userId: USER,
         workosUserId: 'user_sync',
         listedAt: LISTED_AT,
-        // A name the CHECK constraint refuses fails the organizations step;
-        // the retirement of om_S2 that would follow must not happen either.
-        memberships: [workos('om_S3', 'org_S3', 'x'.repeat(101))],
+        // A status the CHECK constraint refuses (what an API change would
+        // look like) fails the memberships step after org_S3 was written;
+        // that row, and the retirement of om_S2 that would follow, must not
+        // survive. This used to be a 101-character name, which the mirror
+        // now stores cut to 100.
+        memberships: [{ ...workos('om_S3', 'org_S3', 'Three'), status: 'banana' as 'active' }],
       })
     ).rejects.toThrow('Failed to load organizations');
 
     expect((await t.db.execute(sql`select id, status from organization_memberships order by id`)).rows).toEqual(before);
+    expect((await t.db.execute(sql`select id from organizations where id = 'org_S3'`)).rows).toEqual([]);
+  });
+
+  it('mirrors a name longer than the table holds instead of failing the sign-in', async () => {
+    const listed = await syncMembershipsForUser({
+      userId: USER,
+      workosUserId: 'user_sync',
+      listedAt: LISTED_AT,
+      memberships: [workos('om_S2', 'org_S2', 'Two renamed'), workos('om_S7', 'org_S7', 'y'.repeat(150))],
+    });
+
+    expect(listed.find((m) => m.id === 'om_S7')?.organization.name).toBe('y'.repeat(100));
   });
 
   it('does not revive a membership deleted after the snapshot it syncs', async () => {

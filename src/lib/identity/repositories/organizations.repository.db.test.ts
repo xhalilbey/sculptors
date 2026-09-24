@@ -40,6 +40,16 @@ describe('organizations.upsertNames', () => {
   it('does nothing for an empty list', async () => {
     await expect(organizations.upsertNames(db, [])).resolves.toBeUndefined();
   });
+
+  it('stores a WorkOS name the table could not hold as the nearest name it can', async () => {
+    await organizations.upsertNames(db, [
+      { id: org('org_nul'), name: 'Acme\u{0} Ltd', workosUpdatedAt: T0 },
+      { id: org('org_150'), name: '\u{1F600}'.repeat(150), workosUpdatedAt: T0 },
+    ]);
+
+    expect((await read('org_nul'))?.name).toBe('Acme Ltd');
+    expect((await read('org_150'))?.name).toBe('\u{1F600}'.repeat(100));
+  });
 });
 
 describe('organizations.insertIfMissing', () => {
@@ -50,6 +60,12 @@ describe('organizations.insertIfMissing', () => {
 
     expect((await read('org_keep'))?.name).toBe('Real name');
     expect((await read('org_placeholder'))?.name).toBe('org_placeholder');
+  });
+
+  it('names the row after its id when the name is empty', async () => {
+    await organizations.insertIfMissing(db, { id: org('org_unnamed'), name: '' });
+
+    expect((await read('org_unnamed'))?.name).toBe('org_unnamed');
   });
 });
 
@@ -97,6 +113,10 @@ describe('organizations.markDeleted and update', () => {
   });
 
   it('lets the database refuse what the checks forbid', async () => {
-    await expect(organizations.upsertNames(db, [{ id: org('org_long'), name: 'x'.repeat(101), workosUpdatedAt: T0 }])).rejects.toThrow();
+    // A rename is validated by its route (organizationNameSchema), so update
+    // writes the name as given and the CHECK is the last word.
+    await organizations.upsertNames(db, [{ id: org('org_long'), name: 'Short', workosUpdatedAt: T0 }]);
+
+    await expect(organizations.update(db, org('org_long'), { name: 'x'.repeat(101) })).rejects.toThrow();
   });
 });

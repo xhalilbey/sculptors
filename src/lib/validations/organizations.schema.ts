@@ -41,3 +41,37 @@ export const sessionResponseSchema = z.object({
 
 /** The error body both envelopes share. */
 export const errorResponseSchema = z.object({ error: z.string() });
+
+/**
+ * Characters no organization name may carry: every control character (NUL,
+ * which a Postgres text column cannot hold, and the line breaks among them),
+ * the bidi marks, embeddings, overrides and isolates that make a name read
+ * differently from what it is, and the line and paragraph separators. ZWJ
+ * and ZWNJ stay allowed: emoji sequences and some scripts need them.
+ */
+const UNSAFE_NAME_CHARACTERS = /[\p{Cc}\u{61C}\u{200E}\u{200F}\u{202A}-\u{202E}\u{2066}-\u{2069}\u{2028}\u{2029}]/u;
+
+/**
+ * An organization name from a request (POST /api/organizations and PATCH
+ * /api/organizations/[id]), written once so the two cannot drift. Trimmed
+ * and NFC-normalised, then limited to 1..100 code points, the unit of the
+ * database's CHECK (char_length), where the routes used to count UTF-16
+ * units. The routes used to accept any trimmed string, so a NUL went to
+ * WorkOS first and only then failed the mirror write.
+ */
+export const organizationNameSchema = z
+  .string()
+  .trim()
+  .normalize('NFC')
+  .refine(
+    value => {
+      const length = [...value].length;
+
+      return length >= 1 && length <= 100;
+    },
+    'Organization name must be between 1 and 100 characters'
+  )
+  .refine(
+    value => !UNSAFE_NAME_CHARACTERS.test(value),
+    'Organization name cannot contain control or text-direction characters'
+  );

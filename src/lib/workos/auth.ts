@@ -201,6 +201,23 @@ async function upsertUser(user: WorkOSUser): Promise<UserRow> {
 }
 
 /**
+ * A first organization's name: "<display name>'s Organization", the display
+ * name cut so the whole stays within the 100 code points a name may have.
+ * A long display name used to give WorkOS a name the mirror refused.
+ */
+function defaultOrganizationName(user: WorkOSUser): string {
+  const suffix = "'s Organization";
+  const owner = Array.from(
+    displayNameOf({ email: user.email, firstName: user.firstName ?? null, lastName: user.lastName ?? null })
+  )
+    .slice(0, 100 - suffix.length)
+    .join('')
+    .trimEnd();
+
+  return `${owner}${suffix}`;
+}
+
+/**
  * The user's organizations, from WorkOS (the authoritative list, taken at
  * every sign-in), mirrored, and guaranteed to be at least one.
  */
@@ -221,11 +238,7 @@ async function loadOrganizations(input: {
 
   if (memberships.length === 0) {
     await createOrganizationForUser({
-      name: `${displayNameOf({
-        email: workosUser.email,
-        firstName: workosUser.firstName ?? null,
-        lastName: workosUser.lastName ?? null,
-      })}'s Organization`,
+      name: defaultOrganizationName(workosUser),
       userId,
       workosUserId: workosUser.id,
     });

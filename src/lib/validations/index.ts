@@ -7,3 +7,4 @@
 
 export { loginSchema, type LoginInput } from './auth.schema';
 export { organizationIdSchema } from './ids.schema';
+export { organizationNameSchema } from './organizations.schema';
