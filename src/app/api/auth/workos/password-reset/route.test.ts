@@ -68,7 +68,10 @@ describe('POST /api/auth/workos/password-reset', () => {
   });
 
   it('answers success without calling workos for a body over 64 KiB', async () => {
-    await expectSuccess(await post({ email: 'ada@example.com', padding: 'x'.repeat(70 * 1024) }));
+    // The size lives in the email itself, a field the schema accepts: z.email() sets no length
+    // limit, so only the cap keeps this address from WorkOS. An unknown padding key would be
+    // refused anyway once the schema is strict, and the test would stop pinning the cap.
+    await expectSuccess(await post({ email: `${'a'.repeat(70 * 1024)}@example.com` }));
 
     expect(createPasswordReset).not.toHaveBeenCalled();
   });
