@@ -1239,3 +1239,49 @@ form post or a popup sign-in flow would need this policy changed first.
 A production build was checked in Chromium: the landing (fonts, hero
 images, the theme switch) and `/auth/login` report no policy violation,
 and `/_next/image` still serves under its own policy.
+
+## 2026-09-24 — Webhook events keep ids and times; deleted users keep no profile
+
+**Decision.** `recordWebhookEvent` (`src/lib/workos/webhook-sync.ts`) now
+stores in `workos_webhook_events.payload` only the string values of
+`object`, `id`, `organizationId`, `userId`, `status`, `createdAt` and
+`updatedAt` from the event's data, plus a membership's `role` as its slug.
+It is an allowlist, so an email, a name, a profile picture, metadata, an
+IP address, a user agent, an impersonator, a one-time code or token, an
+organization's name and any key a later SDK adds are never stored. On
+`user.deleted`, `deactivateByWorkOSUserId` in `users.repository.ts` also
+scrubs the user's row: `email` becomes `<WorkOS user id>@deleted.invalid`
+(the column is NOT NULL and not unique; `.invalid` is reserved by RFC 2606
+and reaches no mailbox), and `first_name`, `last_name` and `avatar_url`
+become null. The row, its `id`, its `workos_user_id` and the 'inactive'
+status stay, under the same `workos_updated_at` guard as before. No schema
+change and no migration.
+
+**Why.** The record step stored `{ ...event.data }` for every event WorkOS
+sent, with no end date: the emails, names, pictures, IP addresses and user
+agents of users the mirror never holds as well, since apply ignores a user
+it has not seen. Nothing reads that copy back. A redelivery is applied
+again from the event WorkOS sends, and the id alone is the idempotency
+guard. A user WorkOS deleted also kept their email and names in `users`
+for good. Rejected: a denylist of profile keys, because every new event
+type or SDK field would then be stored by default. Rejected for now: a
+retention job that empties old payloads and deletes processed rows once
+WorkOS's redelivery horizon has passed. It needs the owner's retention
+period and a scheduler the app does not have, and the event id has to
+outlive WorkOS's redeliveries, since it is what marks a replay as a
+duplicate. Rejected:
+deleting the user row, because memberships and organizations reference it,
+the app role cannot delete identity rows (`0007`), and the WorkOS id must
+stay to order late events.
+
+**Consequence.** A new row says which object an event touched and when,
+not what it said; the full event is WorkOS's own record. Rows written
+before this change keep their full payloads, and users deleted before it
+keep their profile, until an owner-run cleanup or the retention job
+clears them. A late `user.updated` from before a deletion loses on
+`workos_updated_at` and cannot write the profile back, and a deleted
+WorkOS user cannot sign in (WorkOS refuses them and the row is
+'inactive'). `webhook-sync.db.test.ts` pins the stored shape for a user,
+a membership and a session event, the scrub and the late update; the
+webhook seam test pins the shape as the real SDK deserializes it;
+`users.repository.db.test.ts` pins the scrub and its ordering guard.

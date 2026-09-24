@@ -109,7 +109,9 @@ export const organizationMemberships = pgTable(
  * key is the idempotency guard: a redelivery of an event that was applied
  * (processed_at set) is acknowledged without applying it again; one whose
  * apply failed is applied again, and `attempts` counts the deliveries.
- * payload is kept for audit.
+ * payload keeps the event's ids, status and times for audit, never a
+ * profile (lib/workos/webhook-sync.ts auditPayload); rows from before
+ * 24 Sep still hold the whole event.
  */
 export const workosWebhookEvents = pgTable(
   'workos_webhook_events',

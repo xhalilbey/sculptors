@@ -33,12 +33,47 @@ import {
  * WorkOS before binding a session to that organization.
  */
 
+/**
+ * The keys of an event's data that are kept, when they hold a string: what
+ * the event touched and when. An allowlist, so what a user event carries
+ * (email, names, picture, metadata), what an authentication or session event
+ * carries (IP address, user agent), a one-time code or token, and any key a
+ * later SDK adds are never stored.
+ */
+const AUDIT_KEYS = ['object', 'id', 'organizationId', 'userId', 'status', 'updatedAt', 'createdAt'] as const;
+
+/**
+ * What of an event is kept for audit: its ids, status and times, and a
+ * membership's role as its slug. Always an object, because the column is
+ * NOT NULL. Until 24 Sep the whole of `event.data` was stored, forever, for
+ * every event, users the mirror never holds included.
+ */
+function auditPayload(event: Event): Record<string, unknown> {
+  const data: Record<string, unknown> = { ...event.data };
+  const kept: Record<string, unknown> = {};
+
+  for (const key of AUDIT_KEYS) {
+    const value = data[key];
+
+    if (typeof value === 'string') kept[key] = value;
+  }
+
+  const role = data.role;
+
+  if (typeof role === 'object' && role !== null && 'slug' in role && typeof role.slug === 'string') {
+    kept.role = role.slug;
+  }
+
+  return kept;
+}
+
 export function recordWebhookEvent(event: Event) {
   return webhookEventsRepository.record(identityDb(), {
     id: event.id,
     type: event.event,
-    // Kept for replay and audit, in the deserialized shape apply reads.
-    payload: { ...event.data },
+    // Ids and times, for audit. Nothing reads this copy back: a redelivery
+    // is applied again from the event WorkOS sends, never from what is here.
+    payload: auditPayload(event),
   });
 }
 

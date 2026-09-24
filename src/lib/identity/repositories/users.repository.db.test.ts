@@ -172,12 +172,38 @@ describe('users lookups and webhook writes', () => {
     expect(row).toEqual({ first_name: 'Changed', last_name: 'Me' });
   });
 
-  it('deactivates by WorkOS id', async () => {
-    const id = await seedUser(db, { workosUserId: 'user_gone' });
+  it('deactivates by WorkOS id and scrubs the profile, keeping the row and its identity', async () => {
+    const id = await seedUser(db, {
+      workosUserId: 'user_gone',
+      email: 'gone@example.com',
+      firstName: 'Gone',
+      lastName: 'Away',
+      avatarUrl: 'https://example.com/gone.png',
+    });
 
     await users.deactivateByWorkOSUserId(db, 'user_gone', T0);
 
-    expect((await users.findByWorkOSUserId(db, 'user_gone'))?.status).toBe('inactive');
-    expect(id).toBeTruthy();
+    expect(await users.findByWorkOSUserId(db, 'user_gone')).toMatchObject({
+      id,
+      workosUserId: 'user_gone',
+      email: 'user_gone@deleted.invalid',
+      firstName: null,
+      lastName: null,
+      avatarUrl: null,
+      status: 'inactive',
+    });
+  });
+
+  it('leaves a profile newer than the deletion as it is', async () => {
+    const later = new Date(T0.getTime() + 60_000);
+
+    await seedUser(db, { workosUserId: 'user_stale_delete', email: 'kept@example.com', firstName: 'Kept', workosUpdatedAt: later });
+    await users.deactivateByWorkOSUserId(db, 'user_stale_delete', T0);
+
+    expect(await users.findByWorkOSUserId(db, 'user_stale_delete')).toMatchObject({
+      email: 'kept@example.com',
+      firstName: 'Kept',
+      status: 'active',
+    });
   });
 });
