@@ -50,7 +50,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 function CustomerCard({ customer, currency, now, tone }: { customer: Customer; currency: string; now: number; tone: Tone }) {
-  const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
+  const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
   return (
     <article className={cn(tone === 'dark' ? darkCard : lightCard, 'flex flex-col p-5')}>

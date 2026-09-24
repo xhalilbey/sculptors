@@ -30,7 +30,8 @@ function moneyFormat(currency: string, variant: MoneyVariant): Intl.NumberFormat
     style: 'currency',
     currency,
     ...(variant === 'compact'
-      ? { notation: 'compact', maximumFractionDigits: 1 }
+      ? // The minimum is explicit: engines differ on its default here (Node 20 wrote "$15.0K").
+        { notation: 'compact', minimumFractionDigits: 0, maximumFractionDigits: 1 }
       : variant === 'whole'
         ? { minimumFractionDigits: 0, maximumFractionDigits: 0 }
         : { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
