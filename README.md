@@ -92,7 +92,7 @@ changes nothing. Keys nothing reads any more were moved to
 | `SCULPTORS_ALLOWED_WORKOS_USER_IDS` | Comma-separated sign-in allowlist |
 | `SCULPTORS_OWNER_WORKOS_USER_ID` | Legacy single-user allowlist entry, still honoured |
 | `NEXT_PUBLIC_APP_URL` | The app's origin (scheme, host and port), for same-origin checks and redirects; required in production, `http://localhost:3002` elsewhere when unset |
-| `DATABASE_URL` | Neon pooled host (`-pooler`), user `sculptors_app`, `sslmode=verify-full`; the only URL the app reads |
+| `DATABASE_URL` | Neon pooled host (`-pooler`), user `sculptors_app`, `sslmode=verify-full`; the only URL the app reads. `postgres://` or `postgresql://` only, and the query may carry only `sslmode`, `channel_binding` and `sslrootcert`, each once: any other parameter (`application_name`, `options`, ...) or a repeated one refuses to boot |
 | `DATABASE_URL_UNPOOLED` | `.env.migrate.local` only. Neon direct host as the owner; read only by `npm run db:migrate` |
 | `NEON_API_KEY` | `.env.migrate.local` only. Neon API, for provisioning scripts; never read by the app |
 | `NEXT_PUBLIC_LANDING_HERO_VARIANT` | Optional landing hero variant |
