@@ -20,10 +20,13 @@ interface OrganizationContextType {
   createOrganization: (name: string) => Promise<string | null>;
   /**
    * Ask the server to re-issue the session for another organization, then
-   * reload so every page reads the new tenant. Resolves to false when the
-   * server refused; on success the page reloads.
+   * reload so every page reads the new tenant. Resolves like
+   * createOrganization: null when the switch went through (the page then
+   * reloads) or the session is already on that organization, otherwise the
+   * message to show. It used to resolve to false, which no caller read, so
+   * a refused switch looked like a click that did nothing.
    */
-  selectOrganization: (organizationId: string) => Promise<boolean>;
+  selectOrganization: (organizationId: string) => Promise<string | null>;
   /** Re-read the session and the list, after a change that did not reload. */
   refreshOrganizations: () => Promise<void>;
 }
@@ -107,7 +110,7 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
   const selectOrganization = useCallback(
     async (organizationId: string) => {
       if (organizationId === activeOrganization?.id) {
-        return true;
+        return null;
       }
 
       try {
@@ -118,12 +121,14 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
           error: error instanceof Error ? error.message : String(error),
         });
 
-        return false;
+        return error instanceof organizationsClient.ApiRequestError
+          ? error.message
+          : 'Could not switch organization. Please try again.';
       }
 
       window.location.reload();
 
-      return true;
+      return null;
     },
     [activeOrganization?.id]
   );

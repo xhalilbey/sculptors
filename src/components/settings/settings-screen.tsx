@@ -170,12 +170,18 @@ function AppearanceSection() {
 /**
  * The organizations you belong to: switch into another (the provider
  * re-issues the session and reloads on it), or create one (the new one
- * becomes the one you are in).
+ * becomes the one you are in). A refused switch says why on the row that
+ * was clicked, in the same alert line a failed create uses; it used to be
+ * logged and nothing else, so the button simply stopped spinning.
  */
 function OrganizationSection() {
   const { activeOrganization, organizations, loading, selectOrganization, createOrganization } =
     useOrganizations();
   const [switchingId, setSwitchingId] = useState<string | null>(null);
+  const [switchError, setSwitchError] = useState<{
+    organizationId: string;
+    message: string;
+  } | null>(null);
   const [name, setName] = useState('');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -184,9 +190,12 @@ function OrganizationSection() {
     if (switchingId || organizationId === activeOrganization?.id) return;
 
     setSwitchingId(organizationId);
+    setSwitchError(null);
 
     try {
-      await selectOrganization(organizationId);
+      const message = await selectOrganization(organizationId);
+
+      if (message) setSwitchError({ organizationId, message });
     } finally {
       setSwitchingId(null);
     }
@@ -250,6 +259,11 @@ function OrganizationSection() {
                   <p className="text-[12px] capitalize text-[var(--dashboard-text-muted)]">
                     {organization.role}
                   </p>
+                  {switchError?.organizationId === organization.id ? (
+                    <p role="alert" className="mt-1.5 text-[12px] text-[var(--dashboard-danger)]">
+                      {switchError.message}
+                    </p>
+                  ) : null}
                 </div>
                 {current ? (
                   <span className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[#4f7dff]/15 px-2.5 text-[12px] font-semibold text-[#4f7dff]">
