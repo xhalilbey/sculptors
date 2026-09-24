@@ -1075,3 +1075,52 @@ upsert would fail, but WorkOS never lists two for one pair.
 webhook seam test pin the re-added member through the repository, the
 sign-in sync and signed webhooks, and that the late event for the old id
 changes nothing.
+
+## 2026-09-24 — The Origin header decides, and production never guesses the app URL
+
+**Decision.** `requireSameOrigin` in `src/lib/security/request-guards.ts`
+decides on the Origin header alone whenever one is sent, the literal `null`
+and an empty value included. It reads the Referer only when there is no
+Origin at all, and refuses a request with neither. It compares the full
+origin (scheme, host and port) with the origin of the configured app URL.
+Outside production, loopback hosts (`localhost`, `127.0.0.1`, `[::1]`) pass
+on any port; in production they never do. Every refusal is the same 403,
+`{ error: 'Invalid or missing origin' }`. The app URL comes from one
+accessor, `appUrl()` in `src/lib/app-url.ts`, which `getWorkOSEnv` uses
+too: `NEXT_PUBLIC_APP_URL` when it is set; in production, an error when it
+is not; elsewhere `http://localhost:3002`, the port `npm run dev` serves on.
+It reads the variable on every call, never at module load. When production
+has no usable app URL, the guard logs `NEXT_PUBLIC_APP_URL is not set or not
+a URL; refusing state-changing requests` and refuses.
+
+**Why.** An Origin of `null` fell through to the Referer, so a request the
+browser marked as coming from an opaque origin (a sandboxed frame, a
+`data:` page, a cross-origin redirect) was judged by the page address it
+also sent. Only hosts were compared, so `http://` passed for an `https://`
+app. The `http://localhost:3000` fallback was written twice, in the guard
+and in the WorkOS client, with a port the dev server does not use, and in
+production it put back the localhost origin the guard's own comment said
+was gone: a deployment without the variable admitted `localhost:3000` as
+same-origin and sent sign-in redirects there. The allowlist was built at
+import, so no test could reach its production branch, and none was
+written. Rejected: letting `Sec-Fetch-Site: same-origin` decide. Browsers
+send Origin on every POST, and older browsers and non-browser clients do
+not send `Sec-Fetch-*`, so it could only ever be a second signal. Rejected:
+failing at module load or in `next build`. The Docker build has no
+`NEXT_PUBLIC_APP_URL` (`.env*` is not copied into the image), and CI builds
+with a placeholder on purpose.
+
+**Consequence.** Production must set `NEXT_PUBLIC_APP_URL` (README,
+`.env.example`). Without it, every state-changing request is refused with
+a logged reason, and everything that calls `getWorkOSEnv` (the session
+check, sign-in, the callback, logout) fails with the configuration error
+instead of redirecting to localhost. Before, the posts were refused
+silently and the redirects went to `localhost:3000`, so such a deployment
+was already broken, only less visibly. Deferred: a server-only `APP_URL` read at runtime. Next.js
+inlines a `NEXT_PUBLIC_*` value that is set at build time into the server
+bundle as well, so the admitted origin is fixed per image; moving to
+`APP_URL` changes the README contract and the CI build env, and waits for
+the deploy to be wired. `request-guards.test.ts` pins the Origin-first
+rule, the full-origin comparison, loopback on any port outside production
+and never in it, and the logged refusal when production has no app URL.
+`app-url.test.ts` pins the production error and the 3002 fallback.

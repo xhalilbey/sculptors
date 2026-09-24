@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { WorkOS } from '@workos-inc/node';
+import { appUrl } from '@/lib/app-url';
 
 /**
  * The WorkOS client and its configuration, on their own so that modules
@@ -13,9 +14,11 @@ export function getWorkOSEnv() {
   const apiKey = process.env.WORKOS_API_KEY;
   const clientId = process.env.WORKOS_CLIENT_ID;
   const cookiePassword = process.env.WORKOS_COOKIE_PASSWORD;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  // lib/app-url.ts: throws in production when NEXT_PUBLIC_APP_URL is unset,
+  // rather than redirecting everyone to a localhost default.
+  const origin = appUrl();
   const redirectUri =
-    process.env.WORKOS_REDIRECT_URI || `${appUrl}/api/auth/workos/callback`;
+    process.env.WORKOS_REDIRECT_URI || `${origin}/api/auth/workos/callback`;
 
   if (!apiKey || !clientId || !cookiePassword) {
     throw new Error(
@@ -30,7 +33,7 @@ export function getWorkOSEnv() {
     throw new Error('WORKOS_COOKIE_PASSWORD must be at least 32 characters');
   }
 
-  return { apiKey, clientId, cookiePassword, appUrl, redirectUri };
+  return { apiKey, clientId, cookiePassword, appUrl: origin, redirectUri };
 }
 
 let client: WorkOS | null = null;

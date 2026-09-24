@@ -1,80 +1,82 @@
 import { NextResponse, type NextRequest } from 'next/server';
-
-const configuredAppHost = (() => {
-  try {
-    return new URL(
-      process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-    ).host;
-  } catch {
-    return null;
-  }
-})();
-
-// Loopback hosts belong to development only. Seeding them unconditionally
-// meant a production deployment accepted `http://localhost:3000` as a
-// same-origin caller -- browsers set Origin themselves, so this was not
-// browser-exploitable, but it removed the guard for every non-browser client
-// and made the allowlist decorative.
-const allowedHosts = new Set<string>([
-  ...(configuredAppHost ? [configuredAppHost] : []),
-  ...(process.env.NODE_ENV === 'production'
-    ? []
-    : [
-      'localhost:3000',
-      'localhost:3001',
-      'localhost:3002',
-      '127.0.0.1:3000',
-      '127.0.0.1:3001',
-      '127.0.0.1:3002',
-    ]),
-]);
-
-const parseOriginHost = (value: string | null): string | null => {
-  if (!value) return null;
-  try {
-    return new URL(value).host;
-  } catch {
-    return null;
-  }
-};
+import { appUrl } from '@/lib/app-url';
+import { logger } from '@/lib/logger';
 
 /**
- * Check if host is a localhost variant (any port)
+ * Loopback hosts, admitted on any port and scheme outside production only.
+ * Seeding them unconditionally once meant a production deployment accepted
+ * `http://localhost:3000` as a same-origin caller -- browsers set Origin
+ * themselves, so this was not browser-exploitable, but it removed the guard
+ * for every non-browser client and made the allowlist decorative.
  */
-const isLocalhost = (host: string): boolean => {
-  const hostname = host.split(':')[0];
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
 
-  return hostname === 'localhost' || hostname === '127.0.0.1';
+/** The one refusal, whichever check failed. */
+const refuse = (): NextResponse =>
+  NextResponse.json({ error: 'Invalid or missing origin' }, { status: 403 });
+
+/**
+ * Whether an Origin (or a Referer's origin) is this app's: the scheme, host
+ * and port of the configured app URL (lib/app-url.ts). Until 24 Sep 2026 only
+ * the host was compared, so `http://` passed for an `https://` app. The
+ * literal `null` a browser sends for an opaque origin (a sandboxed frame, a
+ * `data:` page, some cross-origin redirects) is never ours.
+ */
+const isAllowedOrigin = (value: string): boolean => {
+  if (value === 'null') return false;
+
+  let url: URL;
+
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+
+  if (process.env.NODE_ENV !== 'production' && LOOPBACK.has(url.hostname)) {
+    return true;
+  }
+
+  let expected: string;
+
+  try {
+    expected = new URL(appUrl()).origin;
+  } catch (error) {
+    logger.error(
+      'NEXT_PUBLIC_APP_URL is not set or not a URL; refusing state-changing requests',
+      error
+    );
+
+    return false;
+  }
+
+  return url.origin === expected;
 };
 
 /**
  * Enforces same-origin requests for state-changing API routes to mitigate CSRF.
  * Returns a NextResponse when validation fails, or null when the request is allowed.
+ *
+ * An Origin header, `null` included, decides alone; the Referer is read only
+ * when there is no Origin at all, and a request with neither is refused.
+ * Before 24 Sep 2026 an Origin of `null` fell through to the Referer, so a
+ * request the browser marked as coming from an opaque origin was judged by
+ * the page address it also sent.
  */
 export const requireSameOrigin = (
   request: NextRequest
 ): NextResponse | null => {
-  const originHeader = request.headers.get('origin');
-  const refererHeader = request.headers.get('referer');
-  const headerHost = parseOriginHost(originHeader) ?? parseOriginHost(refererHeader);
+  const origin = request.headers.get('origin');
 
-  // In development, allow any localhost port
-  const isDevelopment = process.env.NODE_ENV === 'development';
-  
-  if (!headerHost) {
-    return NextResponse.json(
-      { error: 'Invalid or missing origin' },
-      { status: 403 }
-    );
+  if (origin !== null) {
+    return isAllowedOrigin(origin) ? null : refuse();
   }
 
-  // Allow if host is in allowed list OR if in development and it's localhost
-  if (allowedHosts.has(headerHost) || (isDevelopment && isLocalhost(headerHost))) {
-    return null;
+  const referer = request.headers.get('referer');
+
+  if (referer !== null) {
+    return isAllowedOrigin(referer) ? null : refuse();
   }
 
-  return NextResponse.json(
-    { error: 'Invalid or missing origin' },
-    { status: 403 }
-  );
+  return refuse();
 };
