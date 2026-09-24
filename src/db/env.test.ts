@@ -5,8 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
  * slot. Each must refuse, and the refusal must never repeat the URL: it
  * carries the password. They must also read the URL as pg does: a query
  * parameter pg applies over the URL's parts, a repeated key (pg keeps the
- * last), or a socket: URL would otherwise connect somewhere the checks never
- * looked.
+ * last), a socket: URL, or a parameter name pg leaves encoded would otherwise
+ * connect in a way the checks never saw.
  */
 
 const PASSWORD = 's3cret-p4ss';
@@ -67,6 +67,13 @@ describe('dbEnv', () => {
     ['an options parameter', `${POOLED}&options=-c%20role%3Dneondb_owner`, /only sslmode, channel_binding/],
     ['a second sslmode=disable', `${POOLED}&sslmode=disable`, /must not repeat a query parameter/],
     ['a second sslmode=no-verify', `${POOLED}&sslmode=no-verify`, /must not repeat a query parameter/],
+    // The malformed escape makes pg re-encode the URL, and it reads the key
+    // as `ssl%6Dode`: no sslmode, so no TLS.
+    [
+      'a parameter name pg leaves encoded',
+      `${POOLED.replace('?sslmode', '?ssl%6Dode')}&channel_binding=re%zzquire`,
+      /only sslmode, channel_binding and sslrootcert/,
+    ],
   ])('refuses %s without echoing the URL', async (_case, url, rule) => {
     const dbEnv = await load(url);
 

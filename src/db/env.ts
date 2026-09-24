@@ -18,15 +18,19 @@ import { z } from 'zod';
  * `searchParams.get` returns the first, so
  * `?sslmode=verify-full&sslmode=no-verify` read as verified here and
  * connected without checking the certificate. A `socket:` URL connects to
- * the Unix socket named by its path, whatever host it shows. Until
- * 24 Sep 2026 each of those passed every check below. Now the scheme is
- * pinned, a parameter may appear once, and only the TLS parameters are
- * allowed: `channel_binding` for Neon's copied form (pg ignores it) and
- * `sslrootcert`, which swaps the CAs verify-full trusts for one file but
- * still checks the certificate and host name (the local Postgres the cloud
- * sessions use needs it). An allowlist rather than a list of known
- * overrides, because pg's options grow and each new one would be a way round
- * a check.
+ * the Unix socket named by its path, whatever host it shows. And pg
+ * re-encodes a URL holding a space or a malformed escape (`%zz`) before
+ * parsing it, which leaves any escape with a hex letter undecoded:
+ * `?ssl%6Dode=verify-full` is sslmode to `searchParams` but an unknown key
+ * to pg, which then connects without TLS. Until 24 Sep 2026 each of those
+ * passed every check below. Now the scheme is pinned, a parameter may appear
+ * once, and only the TLS parameters are allowed, matched on the name as
+ * written, which no decoding changes: `channel_binding` for Neon's copied
+ * form (pg ignores it) and `sslrootcert`, which swaps the CAs verify-full
+ * trusts for one file but still checks the certificate and host name (the
+ * local Postgres the cloud sessions use needs it). An allowlist rather than
+ * a list of known overrides, because pg's options grow and each new one
+ * would be a way round a check.
  */
 
 const ALLOWED_SCHEMES = ['postgres:', 'postgresql:'];
@@ -38,6 +42,20 @@ function parseUrl(value: string): URL | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The query's parameter names as written, before any decoding, so an escaped
+ * name that pg might read undecoded never matches the allowlist. Values need
+ * no such care: pg verifies less only for sslmode=disable or no-verify, and
+ * an escape left in a value cannot spell either.
+ */
+function rawParameterNames(search: string): string[] {
+  return search
+    .slice(1)
+    .split('&')
+    .filter((pair) => pair !== '')
+    .map((pair) => pair.split('=', 1)[0] ?? '');
 }
 
 const schema = z.object({
@@ -69,8 +87,8 @@ const schema = z.object({
     }, 'DATABASE_URL must not repeat a query parameter')
     .refine(
       (value) =>
-        Array.from(parseUrl(value)?.searchParams.keys() ?? []).every((key) =>
-          ALLOWED_PARAMETERS.includes(key)
+        rawParameterNames(parseUrl(value)?.search ?? '').every((name) =>
+          ALLOWED_PARAMETERS.includes(name)
         ),
       'DATABASE_URL may carry only sslmode, channel_binding and sslrootcert'
     ),

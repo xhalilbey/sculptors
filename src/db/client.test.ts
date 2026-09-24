@@ -6,7 +6,9 @@ import { getDb, type Db } from './client';
  * node-postgres re-emits an idle client's error on the pool, and an 'error'
  * event with no listener is thrown, which ends the process. These tests pin
  * the pool's listener (it logs the error's name and code, never its message)
- * and the TCP keepalive that lets a dropped idle connection surface there.
+ * and the TCP keepalive that lets a dropped idle connection surface there,
+ * with a delay short enough to probe a client while it is still idle (at 0,
+ * pg's default, the kernel waits two hours).
  * The pool is real but never connects: nothing here queries.
  */
 
@@ -65,5 +67,7 @@ describe('getDb', () => {
 
     expect(pool.listenerCount('error')).toBe(1);
     expect(pool.options.keepAlive).toBe(true);
+    expect(pool.options.keepAliveInitialDelayMillis).toBe(10_000);
+    expect(pool.options.keepAliveInitialDelayMillis).toBeLessThan(pool.options.idleTimeoutMillis ?? 0);
   });
 });

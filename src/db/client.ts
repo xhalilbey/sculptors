@@ -42,9 +42,14 @@ export function getDb(): Db {
       maxLifetimeSeconds: 900,
       // pg ignores channel_binding in the URL; this is the only switch.
       enableChannelBinding: true,
-      // TCP keepalive, so a connection the network dropped while idle fails
-      // on its own instead of on the next query that borrows it.
+      // TCP keepalive from 10 s of silence, below idleTimeoutMillis. Node then
+      // probes each second and gives up after ten, so a connection the
+      // network dropped while idle fails on its own, through the 'error'
+      // listener below, instead of on the next query that borrows it. Without
+      // the delay pg passes 0, which keeps the kernel's two hours, longer than
+      // any client here lives.
       keepAlive: true,
+      keepAliveInitialDelayMillis: 10_000,
     });
 
     // node-postgres re-emits an idle client's error (the server ended the
