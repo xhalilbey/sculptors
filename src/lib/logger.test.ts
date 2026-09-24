@@ -13,6 +13,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
  * lines (which carry user and organization ids) out of the visitor's
  * console. Whether the build keeps those console calls at all is pinned in
  * src/next-config.test.ts, because Vitest never runs Next's compiler.
+ *
+ * Secret keys are redacted whatever their case and wherever they sit, in
+ * nested objects and in arrays, while the ids operators need stay readable.
  */
 
 function uniqueViolation() {
@@ -132,6 +135,46 @@ describe('logger in production', () => {
 
     expect(entry).toMatchObject({ severity: 'ERROR', level: 'error', message: 'Boom', requestId: 'req-1' });
     expect(entry.timestamp).not.toBe('long ago');
+  });
+
+  it('redacts camelCase secrets and those inside arrays', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const logger = await loggerFor('production');
+
+    logger.warn('Session detail', {
+      accessToken: 'at-1',
+      refreshToken: 'rt-1',
+      sessionId: 's-1',
+      sealedSession: 'seal-1',
+      refreshedSessionData: 'seal-2',
+      pendingAuthenticationToken: 'p-1',
+      nested: { cookiePassword: 'cp-1' },
+      list: [{ refresh_token: 'rt-2' }, [{ sessionData: 'seal-3' }], new Error('in a list'), 'plain'],
+      userId: 'u-1',
+      organizationId: 'org_1',
+      sessionOrganizationId: 'org_2',
+      email: 'ada@example.com',
+    });
+
+    const line = String(warn.mock.calls[0]?.[0]);
+    const entry = entryOf(warn);
+
+    expect(line).not.toMatch(/at-1|rt-1|s-1|seal-1|seal-2|seal-3|p-1|cp-1|rt-2|ada@/);
+    expect(entry).toMatchObject({
+      accessToken: '[REDACTED]',
+      sealedSession: '[REDACTED]',
+      nested: { cookiePassword: '[REDACTED]' },
+      list: [
+        { refresh_token: '[REDACTED]' },
+        [{ sessionData: '[REDACTED]' }],
+        { name: 'Error', message: 'in a list' },
+        'plain',
+      ],
+      userId: 'u-1',
+      organizationId: 'org_1',
+      sessionOrganizationId: 'org_2',
+      email: 'a*a@example.com',
+    });
   });
 
   it('stays quiet for info in a production browser bundle', async () => {

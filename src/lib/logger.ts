@@ -13,34 +13,50 @@ interface LogContext {
 }
 
 /**
- * Sensitive keys that should be masked in logs
+ * Keys whose values are replaced with '[REDACTED]' in logs. sanitizeContext
+ * compares the lower-cased key, so the set is lower-cased as it is built.
+ * Until 24 Sep 2026 it held 'accessToken', 'refreshToken', 'sessionId' and
+ * the like as written, which a lower-cased key can never equal, so
+ * `{ accessToken }` was logged in clear.
+ *
+ * Exact keys only, on purpose: a substring rule would also hide ids that
+ * operators need ('session' matches sessionOrganizationId, 'auth' matches
+ * authorized). A bare 'code' stays out too: it is the SQLSTATE on a failed
+ * query's cause and the WorkOS error code sign-in logs for diagnosis.
  */
-const SENSITIVE_KEYS = new Set([
-  'password',
-  'token',
-  'apiKey',
-  'api_key',
-  'apikey',
-  'secret',
-  'accessToken',
-  'access_token',
-  'refreshToken',
-  'refresh_token',
-  'idToken',
-  'id_token',
-  'authorization',
-  'auth',
-  'Bearer',
-  'sessionId',
-  'session_id',
-  'cookie',
-  'csrf',
-  'ssn',
-  'creditCard',
-  'credit_card',
-  'cvv',
-  'pin',
-]);
+const SENSITIVE_KEYS = new Set(
+  [
+    'password',
+    'token',
+    'apiKey',
+    'api_key',
+    'secret',
+    'accessToken',
+    'access_token',
+    'refreshToken',
+    'refresh_token',
+    'idToken',
+    'id_token',
+    'authorization',
+    'auth',
+    'sessionId',
+    'session_id',
+    'cookie',
+    'set-cookie',
+    'csrf',
+    'ssn',
+    'creditCard',
+    'credit_card',
+    'cvv',
+    'pin',
+    // WorkOS session material, under the names this codebase gives it.
+    'sealedSession',
+    'sessionData',
+    'refreshedSessionData',
+    'pendingAuthenticationToken',
+    'cookiePassword',
+  ].map((key) => key.toLowerCase())
+);
 
 type QueryError = Error & { query: string; params: unknown[] };
 
@@ -131,8 +147,15 @@ class Logger {
         continue;
       }
 
+      // Arrays are walked element by element. They used to pass through
+      // untouched, so `[{ refresh_token }]` was logged in clear.
+      if (Array.isArray(value)) {
+        sanitized[key] = value.map((element) => this.sanitizeElement(element));
+        continue;
+      }
+
       // Special handling for nested objects
-      if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Error)) {
+      if (value && typeof value === 'object' && !(value instanceof Error)) {
         sanitized[key] = this.sanitizeContext(value as LogContext);
         continue;
       }
@@ -147,6 +170,27 @@ class Logger {
     }
 
     return sanitized;
+  }
+
+  /**
+   * Treat one array element the way sanitizeContext treats a value: objects
+   * are redacted key by key, errors serialised, nested arrays walked, and
+   * primitives kept as they are.
+   */
+  private sanitizeElement(element: unknown): unknown {
+    if (Array.isArray(element)) {
+      return element.map((item) => this.sanitizeElement(item));
+    }
+
+    if (element instanceof Error) {
+      return serializeError(element, this.isDevelopment);
+    }
+
+    if (element && typeof element === 'object') {
+      return this.sanitizeContext(element as LogContext);
+    }
+
+    return element;
   }
 
   /**
