@@ -8,7 +8,7 @@ import { z, ZodError } from 'zod';
 import { readJsonBody } from '@/lib/api/read-json-body';
 import { ensureOrganizationAccess } from '@/lib/auth/ensure-organization-access';
 import { resolveSession, type SessionResolution } from '@/lib/auth/session';
-import { formatErrorResponse } from '@/lib/error-handler';
+import { clientMessage } from '@/lib/error-handler';
 import {
   isOrganizationId,
   parseOrganizationId,
@@ -287,8 +287,8 @@ function handleError(
     logger.warn('Route error', { requestId, ...trace, status, reason: err.message });
   }
 
-  // formatErrorResponse sanitizes the message; raw error text never reaches the client.
-  return fail(envelope, formatErrorResponse(err).error, status);
+  // Our own AppError messages go out as written; raw error text never reaches the client.
+  return fail(envelope, clientMessage(err, status), status);
 }
 
 /**
