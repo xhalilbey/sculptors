@@ -823,3 +823,38 @@ The owner asked for better type, like Groq's, and singled out Groq's nav
   as Groq's are; the hero's tracking opened from -0.06em to -0.045em.
 - **Not done here**: the app itself (dashboard, auth) still falls through
   to the system font for the same reason.
+
+## 2026-09-24 — After the sectors: one journey for developers, and the engines
+
+The owner called the content after the sectors weak and pointed at
+caretta.so, which explains its product as a story with a drawing per step.
+Two corrections followed the first pass: it "broke from our definition and
+our colours" -- we serve developers, who integrate the Agent Store into
+their platforms -- and the old action row gave way to our in-house engines.
+
+- **Journey** (`agent-journey.tsx`), replacing the agent's cards, the
+  store's parts and the action row: 01 Integrate (the platform's data
+  flowing into the Agent Store; illustrative SDK code for install, sync and
+  compose), 02 In your product (the helix of a conversation -- kept exactly
+  as first drawn at the owner's word, only recoloured -- with a call to
+  action: "Give every merchant on your platform an agent that sells"),
+  03 Back to your platform (one agent fanning out to the events a platform
+  receives, and what a developer gets). The SDK names in the code are
+  placeholders until the real API is settled.
+- **Palette**: lava #FF3621 for every accent, navy for ink and code; the
+  first pass's blue and green chapters are gone.
+- **Drawings** are pure, seeded geometry (`journey-art.ts`,
+  `engine-art.ts`, tested), so server and browser draw the same picture.
+  Every coordinate is rounded: an unrounded Math.cos differed in the last
+  digit between Node and Chrome and broke hydration.
+- **Engines** (`engines.tsx`): Zeus (customer memory build), Prometheus
+  (realtime data processing), Atlas (agent request scaling -- our name for
+  the owner's "another Greek god", the titan who carries the sky). Navy
+  cards, one object drawn in light each: a forking bolt, a flame of rising
+  streams, a globe with requests in orbit. ENGINES is a list; the grid
+  takes more.
+- **Anchors**: the header's four links now all land (Agent Store →
+  sectors, Memory → 01, Integrations → 03, Platform → the journey), and an
+  index in the pixel face rides the left gutter from 1500px up.
+- Removed: `agent-showcase.tsx`, `agent-store-parts.tsx`, their four
+  `public/store` images and about 520 lines of their CSS.

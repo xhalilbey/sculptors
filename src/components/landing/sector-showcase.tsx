@@ -102,7 +102,7 @@ export function SectorShowcase() {
   const tabs = [...SECTORS.map(sector => ({ id: sector.id, name: sector.short })), { id: OTHERS_ID, name: 'Others' }];
 
   return (
-    <section className="sectors" aria-labelledby="sectors-title">
+    <section className="sectors" id="agent-store" aria-labelledby="sectors-title">
       <p className="sectors-eyebrow">Where the agents sell</p>
       <h2 id="sectors-title" className="sectors-title">
         One agent store for
