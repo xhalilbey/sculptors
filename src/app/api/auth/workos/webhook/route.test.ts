@@ -1,3 +1,4 @@
+import { SignatureVerificationException } from '@workos-inc/node';
 import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -6,7 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * directions are what matter: no secret must mean nothing is accepted, a
  * bad signature must mean nothing is recorded or applied, a replayed
  * event must not be applied twice, and a failed one must be applied when
- * WorkOS delivers it again.
+ * WorkOS delivers it again. Only the SDK's SignatureVerificationException
+ * is a bad signature: an event that verified but cannot be read is a 500,
+ * so WorkOS retries it, and it is logged as what it is.
  */
 
 const constructEvent = vi.fn();
@@ -14,9 +17,11 @@ const recordWebhookEvent = vi.fn();
 const applyWebhookEvent = vi.fn();
 const markWebhookEventProcessed = vi.fn();
 const markWebhookEventFailed = vi.fn();
+const warn = vi.fn();
+const error = vi.fn();
 
 vi.mock('@/lib/logger', () => ({
-  logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
+  logger: { warn, error, info: vi.fn(), debug: vi.fn() },
 }));
 vi.mock('@/lib/workos/client', () => ({
   getWorkOSClient: () => ({ webhooks: { constructEvent } }),
@@ -45,10 +50,13 @@ function request(body: unknown, signature?: string) {
 }
 
 const EVENT = { id: 'event_1', event: 'organization.updated', data: { id: 'org_1', name: 'Codeon' } };
+const BAD_SIGNATURE = new SignatureVerificationException(
+  'Signature hash does not match the expected signature hash for payload'
+);
 
 beforeEach(() => {
   process.env.WORKOS_WEBHOOK_SECRET = 'whsec_test';
-  for (const mock of [constructEvent, recordWebhookEvent, applyWebhookEvent, markWebhookEventProcessed, markWebhookEventFailed]) {
+  for (const mock of [constructEvent, recordWebhookEvent, applyWebhookEvent, markWebhookEventProcessed, markWebhookEventFailed, warn, error]) {
     mock.mockReset();
   }
   markWebhookEventFailed.mockResolvedValue(undefined);
@@ -78,11 +86,32 @@ describe('POST /api/auth/workos/webhook', () => {
   });
 
   it('records and applies nothing when the signature does not verify', async () => {
-    constructEvent.mockRejectedValue(new Error('SignatureVerificationException'));
+    constructEvent.mockRejectedValue(BAD_SIGNATURE);
 
     const response = await POST(request({ id: 'event_1', event: 'organization.created' }, 'bad'));
 
     expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'Invalid signature' });
+    expect(warn).toHaveBeenCalledWith('WorkOS webhook signature rejected', { errorType: 'SignatureVerificationException' });
+    expect(recordWebhookEvent).not.toHaveBeenCalled();
+    expect(applyWebhookEvent).not.toHaveBeenCalled();
+  });
+
+  it('answers 500 and records nothing when a verified event cannot be read', async () => {
+    // What the SDK's deserializer throws for, say, an organization without
+    // `domains`: the signature has already verified by then.
+    constructEvent.mockRejectedValue(new TypeError("Cannot read properties of undefined (reading 'map')"));
+
+    const response = await POST(request(EVENT, 'good'));
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: 'Failed to read event' });
+    expect(error).toHaveBeenCalledWith('Failed to deserialize a verified WorkOS event', {
+      errorType: 'TypeError',
+      eventId: 'event_1',
+      type: 'organization.updated',
+    });
+    expect(warn).not.toHaveBeenCalled();
     expect(recordWebhookEvent).not.toHaveBeenCalled();
     expect(applyWebhookEvent).not.toHaveBeenCalled();
   });
@@ -90,7 +119,7 @@ describe('POST /api/auth/workos/webhook', () => {
   it('verifies the payload exactly as it was received', async () => {
     const body = { id: 'event_1', event: 'organization.updated', data: { id: 'org_1', name: 'Codeon' } };
 
-    constructEvent.mockRejectedValue(new Error('SignatureVerificationException'));
+    constructEvent.mockRejectedValue(BAD_SIGNATURE);
     await POST(request(body, 'sig'));
 
     expect(constructEvent).toHaveBeenCalledWith({ payload: body, sigHeader: 'sig', secret: 'whsec_test' });

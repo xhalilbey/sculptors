@@ -1,4 +1,4 @@
-import type { Event } from '@workos-inc/node';
+import { SignatureVerificationException, type Event } from '@workos-inc/node';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { definePublicRoute } from '@/lib/api/define-route';
@@ -58,11 +58,30 @@ export const POST = definePublicRoute({
       // Verifies the signature, then deserializes: the event is camelCase.
       event = await getWorkOSClient().webhooks.constructEvent({ payload, sigHeader, secret });
     } catch (error) {
-      logger.warn('WorkOS webhook signature rejected', {
+      // Only a signature problem is the sender's fault. The SDK's
+      // verifyHeader (9.1.1) throws SignatureVerificationException, and
+      // nothing else, for every one: no t= or v1=, no hash, a hash that does
+      // not match, or a timestamp older than its default 180 s tolerance
+      // (the replay window, which route.seam.db.test.ts pins). Until 24 Sep
+      // every error here was answered 401 'Invalid signature', so an event
+      // that verified but could not be deserialized was logged as a forgery.
+      if (error instanceof SignatureVerificationException) {
+        logger.warn('WorkOS webhook signature rejected', { errorType: error.name });
+
+        return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
+      }
+
+      // Anything else came after the signature verified, so the id and type
+      // in the raw payload are WorkOS's own and safe to log; no data field
+      // is. Nothing has been recorded yet, and a 500 makes WorkOS deliver
+      // the event again.
+      logger.error('Failed to deserialize a verified WorkOS event', {
         errorType: error instanceof Error ? error.name : 'UnknownError',
+        eventId: typeof payload.id === 'string' ? payload.id : undefined,
+        type: typeof payload.event === 'string' ? payload.event : undefined,
       });
 
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
+      return NextResponse.json({ error: 'Failed to read event' }, { status: 500 });
     }
 
     if (!event?.id || !event.event) {

@@ -50,8 +50,7 @@ vi.mock('@/lib/identity', async (importOriginal) => {
 
 const { POST } = await import('./route');
 
-async function deliver(payload: Record<string, unknown>) {
-  const timestamp = Date.now();
+async function deliver(payload: Record<string, unknown>, timestamp = Date.now()) {
   const signature = await workos.webhooks.computeSignature(timestamp, payload, SECRET);
 
   return POST(
@@ -245,5 +244,29 @@ describe('POST /api/auth/workos/webhook, end to end', () => {
 
     expect(response.status).toBe(401);
     expect(await one(sql`select count(*)::int as n from organization_memberships where id = 'om_FORGED'`)).toEqual({ n: 0 });
+  });
+
+  it('refuses a delivery signed outside the replay window', async () => {
+    vi.stubEnv('WORKOS_WEBHOOK_SECRET', SECRET);
+    const payload = wireMembershipEvent('organization_membership.created', 'event_seam_stale', {
+      id: 'om_STALE',
+      organizationId: 'org_STALE',
+      userId: 'user_seam',
+    });
+
+    // A genuine delivery captured and sent again after the SDK's 180 s
+    // tolerance: the signature is right, the timestamp is not.
+    let response = await deliver(payload, Date.now() - 181_000);
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'Invalid signature' });
+    expect(await one(sql`select count(*)::int as n from workos_webhook_events where id = 'event_seam_stale'`)).toEqual({ n: 0 });
+    expect(await one(sql`select count(*)::int as n from organization_memberships where id = 'om_STALE'`)).toEqual({ n: 0 });
+
+    // The same bytes signed inside the window are accepted, so the window
+    // is still 180 s and the timestamp alone was refused.
+    response = await deliver(payload, Date.now() - 170_000);
+
+    expect(response.status).toBe(200);
   });
 });
