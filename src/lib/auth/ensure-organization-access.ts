@@ -14,8 +14,9 @@
  * (isOwnerInWorkOS in lib/workos/organizations).
  *
  * A malformed id or no active membership is a 403. A failed lookup is not:
- * findMembership throws and defineRoute answers 500, so a database outage
- * is no longer told "You do not have access to this organization". Until
+ * findMembership throws and defineRoute answers 500, so a lookup that fails
+ * after the session has resolved (a dropped connection or a timeout) is no
+ * longer told "You do not have access to this organization". Until
  * 24 Sep 2026 this also took the session's organization and refused a
  * mismatch; only tests passed it, since a route that names an organization
  * means to name one other than the session's.

@@ -231,8 +231,10 @@ export async function updateOrganization(
  * lookup is not: it throws, so defineRoute answers 500 and logs an error.
  * Until 24 Sep 2026 the failure was caught here and answered null, which
  * told a member "You do not have access to this organization" (a 403)
- * whenever the database was unreachable. A caller that can do without the
- * row catches around its own call (POST /api/organizations).
+ * whenever this lookup failed after the session had resolved (a dropped
+ * connection or a timeout). A database that is down altogether already
+ * failed earlier, in resolveSession, and was a 500. A caller that can do
+ * without the row catches around its own call (POST /api/organizations).
  */
 export async function findMembership(
   userId: string,
