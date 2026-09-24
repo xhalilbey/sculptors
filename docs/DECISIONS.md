@@ -146,6 +146,10 @@ middleware code this phase kept frozen:
   `import 'server-only'`, and the ESLint zone fences only `supabase/server.ts`.
   `workos/auth.ts` imports the service-role client, so add `server-only` to
   all three and put `./src/lib/workos` in the zone.
+  *(Done 24 Sep 2026: server-only is in both files and lib/workos is fenced
+  from components, hooks, contexts, providers and slice ui/ by a
+  resolved-path zone; see "Slice layers are checked on resolved paths; UI
+  never reaches lib/workos".)*
 - The middleware matcher skips every path ending in an image extension,
   `/api/**` included (for example `PATCH /api/organizations/x.png`). The route
   still checks origin and session itself, but it skips the rate limit. Keep
@@ -1324,3 +1328,51 @@ header on a plain answer, a 401, a cross-origin 403 and a public route,
 a handler's own value kept, and that value replaced when the answer
 carries the session cookie; the route tests pin it on the data and
 organization routes, and `middleware.test.ts` on the 401 and the 429.
+
+## 2026-09-24 — Slice layers are checked on resolved paths; UI never reaches lib/workos
+
+**Decision.** Which sibling layer a feature slice's file may import is now
+an `import/no-restricted-paths` zone in `LOCKED_ZONES` (`eslint.config.mjs`):
+`domain/` imports none of `application/`, `infrastructure/`, `api/` or
+`ui/`, and `application/` and `infrastructure/` import neither `api/` nor
+`ui/`. A third new zone keeps `components/`, `hooks/`, `contexts/`,
+`providers/` and every slice's `ui/` off `src/lib/workos`. The per-layer
+`@typescript-eslint/no-restricted-imports` blocks stay, for the packages a
+layer must not use (`next/*`, `react`). No source file had to change: lint
+was clean under the new zones on the first run.
+
+**Why.** The sibling-layer rules were patterns on `@/features/*/...`
+specifiers, but the slices import their own layers relatively
+(`../application/ports`, `../domain/time`), so
+`import { formatValue } from '../ui/format'` in a `domain/` file passed
+lint; a probe against the old config confirmed it. A zone resolves the
+import to a file before it compares, so the spelling does not matter, which
+is why the database fence already has `DB_PATH_ZONE`. The zones sit in
+`LOCKED_ZONES`, so the three blocks that restate it (every source file,
+tests, and code outside the data layer) all carry them; flat config
+replaces a rule's options instead of merging them, and a zone added to one
+block alone would drop out of the others. The `lib/workos` fence closes the
+item carried from 22 Sep. It is a zone of its own, not part of
+`UI_NEVER_HOLDS_THE_DATABASE`, because that zone's target is all of `app/`,
+and the routes in `app/api` are where `lib/workos` is used. Rejected:
+adding relative forms such as `../ui/**` to the specifier patterns, because
+a relative pattern depends on how deep the importing file sits, so
+`../../ui/x` from a folder inside `domain/` would pass. Rejected for now: a
+cross-slice rule on resolved paths. A zone cannot tie its target and its
+`from` to the same slice name, so it would take one zone per slice, read
+from `src/features/` when the config loads so that a new slice is not
+missed. No slice reaches another relatively today, the `@/features/...`
+deep path is refused by `CROSS_SLICE`, and the new zones already refuse
+another slice's `api/` or `ui/` from `domain/`, `application/` or
+`infrastructure/` however it is spelled.
+
+**Consequence.** A layer violation fails `npm run lint` whichever way the
+import is written, test files included, since a test sits in its layer and
+is held to it. `src/eslint-config.test.ts` lints one probe import per rule
+at a path that does not exist, through the real config, and fails if a zone
+stops matching (a glob that never matches fails silently otherwise): every
+forbidden layer pair, relatively and by alias, `lib/workos` from each UI
+folder, and the imports that must stay allowed (`infrastructure/` to
+`application/ports`, `ui/` to `api/`, `api/` to `application/`, a route and
+`lib/` to `lib/workos`). `docs/architecture/boundaries.md` says how each
+half of the slice rules is checked and lists the `lib/workos` row.

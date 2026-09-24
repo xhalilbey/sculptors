@@ -171,6 +171,46 @@ const LOCKED_ZONES = {
     },
 
     UI_NEVER_HOLDS_THE_DATABASE,
+
+    // The WorkOS client and the session layer hold the server's API key. UI
+    // reaches them through a route. A zone of its own, because
+    // UI_NEVER_HOLDS_THE_DATABASE targets all of app/, and the routes in
+    // app/api are exactly where lib/workos is meant to be imported.
+    {
+      target: [
+        "./src/components",
+        "./src/hooks",
+        "./src/contexts",
+        "./src/providers",
+        "./src/features/*/ui/**",
+      ],
+      from: "./src/lib/workos",
+      message: "lib/workos holds the server key and the session layer; UI reaches it through a route.",
+    },
+
+    // Inside a slice, dependencies point inward. These used to be
+    // @typescript-eslint/no-restricted-imports patterns on `@/features/...`
+    // specifiers only, while the slices import their own layers relatively
+    // (`../application/ports`), so `../ui/x` from domain/ walked past them.
+    // Zones compare the resolved file, so either spelling counts. A zone's
+    // `from` must be all globs or none, hence the `/**` on every entry.
+    // infrastructure/ importing ../application/ports is the adapter
+    // implementing its port, and stays allowed.
+    {
+      target: "./src/features/*/domain/**",
+      from: [
+        "./src/features/*/application/**",
+        "./src/features/*/infrastructure/**",
+        "./src/features/*/api/**",
+        "./src/features/*/ui/**",
+      ],
+      message: "domain/ is pure — no I/O, no framework, no persistence.",
+    },
+    {
+      target: ["./src/features/*/application/**", "./src/features/*/infrastructure/**"],
+      from: ["./src/features/*/api/**", "./src/features/*/ui/**"],
+      message: "application/ and infrastructure/ know nothing of HTTP or React.",
+    },
   ],
 };
 
@@ -316,6 +356,9 @@ const boundaryConfig = [
 
   // Intra-feature layering. They shipped before src/features/ existed, so the
   // first slice (metrics, 23 Sep 2026) was held to them from its first line.
+  // These patterns read the specifier as written, so they are what keeps
+  // next/* and react out; a sibling layer is fenced on its resolved path by
+  // the slice zones in LOCKED_ZONES, which catch a relative import too.
   {
     files: ["src/features/*/domain/**/*.ts"],
     rules: {
