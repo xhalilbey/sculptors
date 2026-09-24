@@ -868,7 +868,16 @@ silent before; its console now shows sanitized errors and warnings, on
 purpose, while info lines (user and organization ids from the auth and
 organization contexts) stay out of it. `define-route.ts` logs a 4xx
 AppError's text under `reason`, since a context `message` no longer
-replaces the line's own.
+replaces the line's own. *(24 Sep, later: the webhook and the AuthKit
+callback answer anyone and sit outside every budget, so each forged
+request now writes a line: a warning for a bad webhook signature or body,
+or a callback carrying an error or a state that does not match its
+cookie, and an error, after a WorkOS code exchange, for a callback whose
+caller set the state cookie itself. Left as it is. Cloud Run's request log
+already writes one entry per request, at WARNING for a 4xx, so these lines
+add a constant factor. A per-address budget on the webhook would answer
+WorkOS's retries, which come from shared addresses, with 429s and lose
+events.)*
 
 ## 2026-09-24 — Runtime dependencies are audited in CI
 
@@ -886,7 +895,12 @@ advisories do not reach this app (no `remotePatterns`, no Server Actions,
 and a middleware that only checks the cookie is present, by design), but
 GHSA-mg66, the Cache Components connection-exhaustion DoS, is scoped to
 `cacheComponents: true`, which is ours, and the upgrade is a minor inside
-the caret range. The gate omits dev dependencies so an advisory in a build
+the caret range. *(24 Sep, later: the middleware does more than check the
+cookie. It runs the API budget, and since "Sign-in submissions are
+throttled, page views are not" it holds the only sign-in throttle, counted
+after its own same-origin check. An advisory that bypasses the middleware
+matters to this app again: the routes still refuse a foreign origin and
+check the session themselves, but sign-in would go unthrottled.)* The gate omits dev dependencies so an advisory in a build
 or test tool, which never reaches the image, does not fail every push, and
 it stops at high so a moderate does not either. Rejected: `npm audit fix
 --force`, which would take drizzle-kit back to 0.18 and break
@@ -895,7 +909,11 @@ the owner's call. eslint-config-next stays at 16.0.10: 16.3 adds
 `@next/next/no-location-assign-relative-destination`, which warns on the
 four deliberate document navigations to route handlers
 (`/api/auth/logout` in `auth-context.tsx` and `settings-screen.tsx`,
-`/api/auth/workos/login` on the login page). Its remedy, `router.push`,
+`/api/auth/workos/login` on the login page). *(24 Sep, later: two remain,
+the `location.assign` in `auth-context.tsx`'s signOut and the login page's
+`location.href`. `settings-screen.tsx` now calls signOut, and the rule
+does not flag the two `location.replace` calls in `auth-context.tsx`. Two
+warnings still fail `--max-warnings 0`, so the reason holds.)* Its remedy, `router.push`,
 first fetches the target as an RSC request; the logout GET refuses any
 `Sec-Fetch-Mode` but `navigate`, and the login route redirects to WorkOS,
 so these stay document navigations. A disable comment, or an absolute URL
@@ -942,7 +960,9 @@ only while the client is honest.
 **Consequence.** Behind an external load balancer or any other extra
 proxy, the rightmost entry would be that proxy's address, for WorkOS and
 the limiter alike; the hop count changes when the deploy is wired, and is
-deferred until then. `client-ip.test.ts` pins the rightmost-hop rule, and
+deferred until then. *(24 Sep, later: the README's Deploy section states
+the precondition, the app reached on Cloud Run directly, for whoever wires
+the deploy.)* `client-ip.test.ts` pins the rightmost-hop rule, and
 the password route test pins that WorkOS receives the appended address,
 not a forged prefix. Keys for real traffic through the middleware are
 unchanged.

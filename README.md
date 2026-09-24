@@ -102,6 +102,21 @@ a change without a rebuild. Keys nothing reads any more were moved to
 | `DATABASE_URL_UNPOOLED` | `.env.migrate.local` only. Neon direct host as the owner; read only by `npm run db:migrate` |
 | `NEON_API_KEY` | `.env.migrate.local` only. Neon API, for provisioning scripts; never read by the app |
 | `NEXT_PUBLIC_LANDING_HERO_VARIANT` | Optional landing hero variant |
+| `GOOGLE_CLOUD_PROJECT` | Optional; the Google Cloud project id, so a route's log lines name their request's trace in full (`projects/<id>/traces/<trace>`), the form Cloud Logging links to the trace; unset, they carry the bare trace id. Cloud Run does not set it |
+
+## Deploy
+
+The image must be reached on Cloud Run directly, through its `run.app` URL
+or a Cloud Run domain mapping. The client address is the rightmost
+`X-Forwarded-For` entry, the one Cloud Run appends
+(`src/lib/security/client-ip.ts`); it keys the sign-in budget and is the
+address WorkOS receives with each sign-in. Behind an external load
+balancer, Firebase Hosting or a CDN, that entry would be the proxy's own
+address for every user: ten sign-in posts from anyone would lock everyone
+out of that instance for 15 minutes, and WorkOS would see one address for
+all of them. Before such a proxy goes in front, `clientIpFrom` has to skip
+that many entries from the right (`docs/DECISIONS.md`, "The client address
+is the rightmost forwarded hop, everywhere"). No setting changes this.
 
 ## Commands
 
@@ -119,9 +134,13 @@ npm run db:check       # migration journal consistency
 npm run verify         # typecheck + lint + check:routes + db:check + test
 ```
 
-CI (`.github/workflows/ci.yml`) runs typecheck, lint, route guards, the
-migration drift check, tests and build on every push to `main` and every pull
-request. It never connects to Neon.
+CI (`.github/workflows/ci.yml`) audits the runtime dependencies
+(`npm audit --omit=dev --audit-level=high`), then runs typecheck, lint,
+route guards, the migration drift check, tests and build on every push to
+`main` and every pull request. It never connects to Neon. A new high or
+critical advisory in a runtime dependency fails CI with no code change,
+until the package is upgraded or the advisory is accepted in
+`docs/DECISIONS.md` with a matching change to the gate.
 
 ## Layout
 
