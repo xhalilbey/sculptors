@@ -983,3 +983,53 @@ as any other. WorkOS's own limits still apply behind this one.
 `src/middleware.test.ts` pins the budget, the shared bucket, the key per
 address, the encoded path, the development exemption, and that pages, the
 webhook and the AuthKit round trip spend none of it.
+
+## 2026-09-24 — Log out ends the session at WorkOS
+
+**Decision.** `GET` and `POST /api/auth/logout` revoke the WorkOS session
+before they sign the browser out. `endWorkOSSession` in
+`src/lib/workos/logout.ts` unseals the cookie locally
+(`userManagement.getSessionFromCookie`), reads the `sid` claim from the
+access token's payload without verifying the token, and calls
+`userManagement.revokeSession({ sessionId })`, waiting at most three
+seconds. Every failure (no cookie, a seal that does not open, a token
+without a `sid`, a WorkOS error, the timeout) is logged by its error type
+only and ends in the same answer as a success: the redirect to the app
+root, at the same URL and status as before, with `wos-session` and
+`wos-state` cleared through `lib/workos/cookies.ts`. The route's own copy
+of the cookie attributes is gone. Both guards are unchanged: GET only as a
+top-level navigation, POST only from our own origin, and neither refusal
+reads the cookie.
+
+**Why.** Logout cleared only the browser's cookie. WorkOS still held the
+session as live, so a copy of the cookie taken before logout (it lives up
+to 30 days) went on refreshing from anywhere. The session id is read
+without verifying the access token because the seal is authenticated with
+our cookie password, so what it holds is what WorkOS gave us, and an
+expired access token still names its session; expired is the usual state
+when logout follows a 401 from `/api/auth/me`. The SDK's
+`CookieSession.authenticate` and `getLogoutUrl` refuse an expired token and
+would skip exactly that case. Rejected: redirecting through WorkOS's hosted
+logout URL (`userManagement.getLogoutUrl({ sessionId, returnTo })`). It
+would end the session too and also clear AuthKit's own cookie in the
+browser, which a server-to-server revocation cannot touch, but WorkOS
+honours `returnTo` only when it is registered as a sign-out redirect in
+that environment's dashboard. That cannot be checked from the code, and
+without it every logout would land on a WorkOS error page. Rejected:
+waiting on WorkOS without a bound, or failing the logout when it errors;
+an outage must never keep someone signed in to the browser they are
+leaving.
+
+**Consequence.** A copied cookie can no longer be refreshed after logout.
+The access token already inside it still authenticates until it expires
+(WorkOS's access-token lifetime, minutes), because `resolveSession`
+verifies that token locally. Logout makes one WorkOS call before the
+redirect, three seconds at the worst. When two tabs log out at once (the
+cross-tab broadcast in `auth-context.tsx`), the second may find the
+session already revoked; that is a logged warning and nothing more.
+Owner, to end AuthKit's browser session as well: register
+`<NEXT_PUBLIC_APP_URL>/` as a sign-out redirect in every WorkOS
+environment; then the redirect can go through `getLogoutUrl` with that
+`returnTo`, a code change kept for then. `logout/route.test.ts` pins both
+guards, the revocation, the expired token, each failure path, the
+three-second bound and the Set-Cookie attributes production sends.

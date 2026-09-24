@@ -1,18 +1,38 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { requireSameOrigin } from '@/lib/security/request-guards';
-import { getWorkOSEnv, WORKOS_SESSION_COOKIE } from '@/lib/workos/auth';
+import {
+  clearWorkOSSessionCookie,
+  getWorkOSEnv,
+  WORKOS_SESSION_COOKIE,
+} from '@/lib/workos/auth';
+import { clearWorkOSStateCookie } from '@/lib/workos/cookies';
+import { endWorkOSSession } from '@/lib/workos/logout';
 
-function clearSessionCookie(response: NextResponse) {
-  response.cookies.set({
-    name: WORKOS_SESSION_COOKIE,
-    value: '',
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 0,
-  });
+/**
+ * GET|POST /api/auth/logout -> end the session at WorkOS, clear the session
+ * and OAuth state cookies, and redirect to the app root.
+ *
+ * Ending the session at WorkOS (lib/workos/logout.ts) revokes its refresh
+ * token, so a copy of the cookie can no longer be refreshed; before 24 Sep
+ * 2026 logout only cleared the browser's cookie. It is best effort and
+ * bounded in time: a missing or unreadable cookie, or a WorkOS that is
+ * down, still gets the redirect and the cleared cookies. The cookies are
+ * cleared through lib/workos/cookies.ts, where their attributes are
+ * written once.
+ */
+async function logoutResponse(request: NextRequest): Promise<NextResponse> {
+  const { appUrl } = getWorkOSEnv();
+  const brandingUrl = new URL('/', appUrl).toString();
+
+  await endWorkOSSession(request.cookies.get(WORKOS_SESSION_COOKIE)?.value);
+
+  const response = NextResponse.redirect(brandingUrl);
+
+  clearWorkOSSessionCookie(response);
+  clearWorkOSStateCookie(response);
+
+  return response;
 }
 
 /**
@@ -41,13 +61,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const { appUrl } = getWorkOSEnv();
-  const brandingUrl = new URL('/', appUrl).toString();
-  const response = NextResponse.redirect(brandingUrl);
-
-  clearSessionCookie(response);
-
-  return response;
+  return logoutResponse(request);
 }
 
 export async function POST(request: NextRequest) {
@@ -57,11 +71,5 @@ export async function POST(request: NextRequest) {
     return originError;
   }
 
-  const { appUrl } = getWorkOSEnv();
-  const brandingUrl = new URL('/', appUrl).toString();
-  const response = NextResponse.redirect(brandingUrl);
-
-  clearSessionCookie(response);
-
-  return response;
+  return logoutResponse(request);
 }
