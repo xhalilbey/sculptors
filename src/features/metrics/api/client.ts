@@ -1,4 +1,4 @@
-import { readJson, toApiRequestError } from '@/lib/clients/api-error';
+import { getJson } from '@/lib/clients/api-error';
 import type { MetricKey } from '../domain/metrics';
 import type { Granularity, RangeSelection } from '../domain/time';
 import {
@@ -22,14 +22,11 @@ export function selectionQuery(selection: RangeSelection): URLSearchParams {
 }
 
 export async function fetchOverview(selection: RangeSelection, signal?: AbortSignal): Promise<OverviewDto> {
-  const response = await fetch(`/api/metrics?${selectionQuery(selection).toString()}`, {
-    credentials: 'include',
-    cache: 'no-store',
-    signal,
-  });
-  const body = await readJson(response);
-
-  if (!response.ok) throw toApiRequestError(response, body, 'Failed to load the panel');
+  const body = await getJson(
+    `/api/metrics?${selectionQuery(selection).toString()}`,
+    'Failed to load the panel',
+    signal
+  );
 
   return overviewResponseSchema.parse(body).overview;
 }
@@ -44,14 +41,11 @@ export async function fetchMetricDetail(
 
   if (granularity) query.set('granularity', granularity);
 
-  const response = await fetch(`/api/metrics/${metric}?${query.toString()}`, {
-    credentials: 'include',
-    cache: 'no-store',
-    signal,
-  });
-  const body = await readJson(response);
-
-  if (!response.ok) throw toApiRequestError(response, body, 'Failed to load this metric');
+  const body = await getJson(
+    `/api/metrics/${metric}?${query.toString()}`,
+    'Failed to load this metric',
+    signal
+  );
 
   return metricDetailResponseSchema.parse(body).detail;
 }
