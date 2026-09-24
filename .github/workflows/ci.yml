@@ -5,15 +5,29 @@ on:
     branches: [main]
   pull_request:
 
+# The workflow only reads the repository: nothing here pushes, comments or
+# releases, and the migrations step only diffs drizzle/ against the commit.
+# Without this block the job token gets the repository's default
+# permissions, which can include write.
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
+      # No later step talks to the remote, so the token is not left in
+      # .git/config for every npm script and dependency to read.
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
+      # The same major as local development and the Dockerfile, and inside
+      # package.json's engines range. Intl output differs between engines
+      # (see 883a449), so tests should run on the Node the app ships on.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - run: npm ci
