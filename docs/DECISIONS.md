@@ -1377,3 +1377,40 @@ stay allowed (`infrastructure/` to `application/ports`, `ui/` to `api/`,
 `api/` to `application/`, a route and `lib/` to `lib/workos`).
 `docs/architecture/boundaries.md` says how each half of the slice rules
 is checked and lists the `lib/workos` row.
+
+## 2026-09-24 — The middleware matches the path Next routes, decoded
+
+**Decision.** `src/middleware.ts` decodes the path once (`decodedPath`:
+`decodeURIComponent`, or the path as sent when it does not decode) and
+runs every check on that form: the credential budget, the API budget and
+its key, the page allowlist and the API 401. A path is protected when
+either the form as sent or the decoded form matches
+`PROTECTED_PATH_PREFIXES`. A path is public only on the form as sent.
+
+**Why.** Next 16.3's production filesystem check also tries the decoded
+path when the path as sent matches no file, but hands the middleware the
+path as sent. "Sign-in submissions are throttled, page views are not"
+decoded for the credential budget alone, and the whole-branch review
+found the other checks still reading the raw path. `/%64ashboard` (and
+`/%6Frders`, `/%73ettings`) matched no protected prefix, so a visitor
+without a cookie got the dashboard shell, the leak the allowlist exists
+to stop. `/%61pi/<route>` skipped the API budget and the 401.
+`/api/%70roducts` passed the prefix test but keyed a bucket of its own,
+so every spelling of a route had 100 calls a minute. `defineRoute`
+still checked the session, so no data was exposed; what was lost was the
+page gate and the per-address budget. Public stays on the form as sent
+because no public path holds a `%`: a public path decodes to a public
+path, and an encoded spelling cannot opt a protected path into
+`PUBLIC_PATH_PREFIXES`. Rejected: refusing every path that holds a `%`,
+which would also refuse an encoded character in a dynamic segment
+(`/dashboard/[metric]`, `/api/organizations/[id]`).
+
+**Consequence.** Each spelling of an API route now spends the one
+budget of its decoded path. An encoded spelling of a pre-session route,
+such as `/api/%61uth/workos/password`, is not public as sent, so without
+a cookie it is a 401, as it was before; the credential budget counts it
+all the same. `src/middleware.test.ts` pins every (dashboard) directory
+with its first letter encoded, and `/settings%2Fhealth`, going to the
+login page; the 401 for `/%61pi/products`; and `/%61pi/products` and
+`/api/%70roducts` spending the budget of `/api/products`. The same tests
+fail against the middleware as it was.

@@ -19,9 +19,17 @@ import { DEFAULT_AUTHENTICATED_ROUTE } from '@/config/constants';
  * page, because a directory missing from PROTECTED_PATH_PREFIXES renders its
  * shell for anyone (the /orders shell once did). A visitor with a session
  * who opens / goes to the dashboard. An API call past the budget of 100
- * per address per minute is a 429. The matcher is pinned apart, in
- * src/middleware-matcher.test.ts, because Next's testing helper patches the
- * console of the file that imports it.
+ * per address per minute is a 429.
+ *
+ * A production build routes a percent-encoded path like its decoded form,
+ * while the middleware sees it as sent, so every check is pinned on encoded
+ * spellings too: each dashboard directory with its first letter encoded
+ * goes to the login page, `/%61pi/products` without a session is the same
+ * 401, and `/%61pi/products` and `/api/%70roducts` spend the budget of
+ * `/api/products`.
+ *
+ * The matcher is pinned apart, in src/middleware-matcher.test.ts, because
+ * Next's testing helper patches the console of the file that imports it.
  *
  * The limiter's store is module-global, so each test imports a fresh
  * middleware. NODE_ENV is 'test' here, so the limiter is active, as in
@@ -52,6 +60,18 @@ function request(
   }
 
   return new NextRequest(`http://localhost:3000${path}`, { method, headers });
+}
+
+function signedIn(path: string) {
+  return new NextRequest(`http://localhost:3000${path}`, {
+    headers: { 'x-forwarded-for': ADDRESS, cookie: 'wos-session=sealed' },
+  });
+}
+
+function dashboardDirectories() {
+  return readdirSync('src/app/(dashboard)', { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .map(entry => entry.name);
 }
 
 async function spend(
@@ -184,14 +204,24 @@ describe('middleware refusals', () => {
     expect(await response.json()).toEqual({ error: 'Unauthorized' });
     expect(response.headers.get('cache-control')).toBe('no-store');
   });
+
+  it('answers a percent-encoded API call without a session with the same 401, since Next still routes it', async () => {
+    const middleware = await loadMiddleware();
+    const encoded = request('/%61pi/products', 'GET');
+
+    expect(encoded.nextUrl.pathname).toBe('/%61pi/products');
+
+    const response = await middleware(encoded);
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'Unauthorized' });
+  });
 });
 
 describe('middleware page allowlist', () => {
   it('protects every dashboard directory', async () => {
     const middleware = await loadMiddleware();
-    const directories = readdirSync('src/app/(dashboard)', { withFileTypes: true })
-      .filter(entry => entry.isDirectory())
-      .map(entry => entry.name);
+    const directories = dashboardDirectories();
 
     expect(directories).toContain('orders');
 
@@ -200,6 +230,26 @@ describe('middleware page allowlist', () => {
 
       expect(response.status, directory).toBe(307);
       expect(response.headers.get('location'), directory).toBe('http://localhost:3000/auth/login');
+    }
+  });
+
+  it('protects every dashboard directory spelled with an encoded letter or slash, which Next still routes to the page', async () => {
+    const middleware = await loadMiddleware();
+    const paths = dashboardDirectories().map(
+      directory => `/%${directory.charCodeAt(0).toString(16)}${directory.slice(1)}`
+    );
+
+    expect(paths).toContain('/%64ashboard');
+
+    for (const path of [...paths, '/settings%2Fhealth']) {
+      const encoded = request(path, 'GET');
+
+      expect(encoded.nextUrl.pathname, path).toBe(path);
+
+      const response = await middleware(encoded);
+
+      expect(response.status, path).toBe(307);
+      expect(response.headers.get('location'), path).toBe('http://localhost:3000/auth/login');
     }
   });
 
@@ -238,5 +288,22 @@ describe('middleware API budget', () => {
     expect(await response.json()).toEqual({ error: 'Too many requests' });
     expect(response.headers.get('retry-after')).toBe('60');
     expect(response.headers.get('cache-control')).toBe('no-store');
+  });
+
+  it('counts every spelling of an API path against one budget, since Next routes them alike', async () => {
+    const middleware = await loadMiddleware();
+
+    expect(await spend(middleware, '/api/products', 98, 'GET')).not.toContain(429);
+
+    for (const path of ['/%61pi/products', '/api/%70roducts']) {
+      const response = await middleware(signedIn(path));
+
+      expect(response.status, path).not.toBe(429);
+      expect(response.headers.get('x-middleware-next'), path).toBe('1');
+    }
+
+    for (const path of ['/api/products', '/%61pi/products', '/api/%70roducts']) {
+      expect((await middleware(signedIn(path))).status, path).toBe(429);
+    }
   });
 });

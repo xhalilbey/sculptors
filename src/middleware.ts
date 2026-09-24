@@ -30,7 +30,9 @@ const AUTH_SUBMIT_PATHS = new Set([
  * An allowlist: a page added under (dashboard) without a line here renders
  * its shell for anyone, which is how /orders once leaked its shell. It lists
  * every (dashboard) page directory on disk -- check with
- * `ls src/app/(dashboard)` when adding one.
+ * `ls src/app/(dashboard)` when adding one. A path is protected when either
+ * the path as sent or its decoded form matches (see decodedPath), so
+ * `/%64ashboard` is refused like `/dashboard`.
  */
 const PROTECTED_PATH_PREFIXES = [
   '/dashboard',
@@ -58,17 +60,25 @@ function isProtectedPath(pathname: string) {
 }
 
 /*
- * The middleware sees the path as sent, but a production build routes
- * `/api/auth/workos/%70assword` and `/api/auth/workos%2Fpassword` to the
- * password handler too (Next's filesystem check also tries the decoded
- * path), so the credential budget matches on the decoded form. A path that
- * does not decode matches no route.
+ * The middleware sees the path as sent, but a production build also routes
+ * its decoded form (Next's filesystem check tries decodeURIComponent of the
+ * path when the path as sent matches nothing): `/%64ashboard` renders the
+ * dashboard, `/%61pi/products` and `/api/%70roducts` run the products route,
+ * and `/api/auth/workos/%70assword` and `/api/auth/workos%2Fpassword` reach
+ * the password handler. So the credential budget, the page allowlist, the
+ * API budget and its key, and the API 401 all match on the decoded form. A
+ * path that does not decode is routed as sent, and matched as sent.
+ *
+ * Before 24 Sep only the credential budget decoded. `/%64ashboard` passed
+ * without a cookie and rendered the dashboard shell, `/%61pi/<route>` skipped
+ * the API budget and the 401 (the route still checked the session), and
+ * each spelling of a route kept a budget of its own.
  */
-function isAuthSubmitPath(pathname: string) {
+function decodedPath(pathname: string) {
   try {
-    return AUTH_SUBMIT_PATHS.has(decodeURIComponent(pathname));
+    return decodeURIComponent(pathname);
   } catch {
-    return false;
+    return pathname;
   }
 }
 
@@ -96,6 +106,7 @@ function tooManyRequests(
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const decoded = decodedPath(pathname);
   const hasWorkOSSession = Boolean(request.cookies.get(WORKOS_SESSION_COOKIE)?.value);
 
   /*
@@ -115,7 +126,7 @@ export async function middleware(request: NextRequest) {
    */
   if (
     request.method === 'POST' &&
-    isAuthSubmitPath(pathname) &&
+    AUTH_SUBMIT_PATHS.has(decoded) &&
     process.env.NODE_ENV !== 'development' &&
     requireSameOrigin(request) === null
   ) {
@@ -129,9 +140,9 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  if (pathname.startsWith('/api/') && !pathname.startsWith('/api/auth/')) {
+  if (decoded.startsWith('/api/') && !decoded.startsWith('/api/auth/')) {
     const identifier = getIdentifier(request);
-    const rateLimitResult = rateLimit(identifier, pathname, 'API_READ');
+    const rateLimitResult = rateLimit(identifier, decoded, 'API_READ');
 
     if (!rateLimitResult.allowed) {
       return tooManyRequests(rateLimitResult, RATE_LIMITS.API_READ, {
@@ -144,12 +155,17 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL(DEFAULT_AUTHENTICATED_ROUTE, request.url));
   }
 
+  /*
+   * Public on the path as sent: none of the public paths holds a `%`, so a
+   * public path decodes to a public path, and an encoded spelling cannot
+   * make a protected path public.
+   */
   if (isPublicPath(pathname)) {
     return NextResponse.next();
   }
 
-  if (isProtectedPath(pathname) && !hasWorkOSSession) {
-    if (pathname.startsWith('/api/')) {
+  if ((isProtectedPath(pathname) || isProtectedPath(decoded)) && !hasWorkOSSession) {
+    if (decoded.startsWith('/api/')) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401, headers: { 'Cache-Control': 'no-store' } }
