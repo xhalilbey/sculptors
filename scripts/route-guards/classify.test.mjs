@@ -166,4 +166,17 @@ export { GET as OPTIONS };`;
 
     expect(kinds(source, 'route.tsx')).toEqual([{ verb: 'POST', kind: 'define-route' }]);
   });
+
+  it('parses a route.tsx source as TSX, so JSX text cannot hide an unguarded handler', () => {
+    // The fixture above classifies the same whichever way it is parsed. This
+    // one does not: read as plain TypeScript, `<p>Say` is a type assertion and
+    // the backtick opens a template that runs to the end of the file, so the
+    // POST below is never seen and the check would pass with nothing to report.
+    const source = [
+      'const note = <p>Say `hi</p>;',
+      'export function POST() { return new Response(null); }',
+    ].join('\n');
+
+    expect(kinds(source, 'route.tsx')).toEqual([{ verb: 'POST', kind: 'unguarded' }]);
+  });
 });
