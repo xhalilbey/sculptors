@@ -1114,7 +1114,13 @@ with a placeholder on purpose.
 `.env.example`). Without it, every state-changing request is refused with
 a logged reason, and everything that calls `getWorkOSEnv` (the session
 check, sign-in, the callback, logout) fails with the configuration error
-instead of redirecting to localhost. Before, the posts were refused
+instead of redirecting to localhost. The WorkOS client is built from the
+credentials alone and never reads the app URL, so the webhook, which the
+guard does not cover, keeps verifying and applying deliveries. As first
+written the client was built through `getWorkOSEnv` as well, so the error
+reached the webhook's signature check: every delivery was answered 401,
+logged as a rejected signature and retried by WorkOS, and the guard's
+line saying why was never written. Before, the posts were refused
 silently and the redirects went to `localhost:3000`, so such a deployment
 was already broken, only less visibly. Deferred: a server-only `APP_URL` read at runtime. Next.js
 inlines a `NEXT_PUBLIC_*` value that is set at build time into the server
@@ -1123,4 +1129,7 @@ bundle as well, so the admitted origin is fixed per image; moving to
 the deploy to be wired. `request-guards.test.ts` pins the Origin-first
 rule, the full-origin comparison, loopback on any port outside production
 and never in it, and the logged refusal when production has no app URL.
-`app-url.test.ts` pins the production error and the 3002 fallback.
+`app-url.test.ts` pins the production error and the 3002 fallback, and
+`src/lib/workos/client.test.ts` pins the callback default on port 3002, the
+production error from `getWorkOSEnv` and a client that still builds without
+the app URL.
