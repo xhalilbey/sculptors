@@ -9,13 +9,7 @@ import { readJsonBody } from '@/lib/api/read-json-body';
 import { ensureOrganizationAccess } from '@/lib/auth/ensure-organization-access';
 import { resolveSession, type SessionResolution } from '@/lib/auth/session';
 import { clientMessage } from '@/lib/error-handler';
-import {
-  isOrganizationId,
-  parseOrganizationId,
-  parseUserId,
-  type OrganizationId,
-  type UserId,
-} from '@/lib/identity';
+import { isOrganizationId, type OrganizationId, type UserId } from '@/lib/identity';
 import { logger } from '@/lib/logger';
 import { requireSameOrigin } from '@/lib/security/request-guards';
 import { runResourceCheck, type ResourceCheck } from '@/lib/tenancy/resource-check';
@@ -57,8 +51,11 @@ const ORIGIN_EXEMPT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  */
 const REQUEST_ID = /^[A-Za-z0-9-]{8,64}$/;
 
+/** A request that may not reach its handler, and how it is answered. */
+type Refusal = { status: number; error: string };
+
 /** How each way a session can fail to resolve is answered. */
-const SESSION_REFUSALS: Record<Exclude<SessionResolution['kind'], 'ok'>, { status: number; error: string }> = {
+const SESSION_REFUSALS: Record<Exclude<SessionResolution['kind'], 'ok'>, Refusal> = {
   none: { status: 401, error: 'Unauthorized. Please log in.' },
   expired: { status: 401, error: 'Session expired. Please sign in again.' },
   // No organization to bind to: a sign-in creates or finds one.
@@ -129,7 +126,11 @@ export type Authz<TParams, TQuery, TBody> =
    * whether the id is visible there; `false` becomes a 404, so a missing id
    * and a foreign id are indistinguishable to the caller. It is a
    * ResourceCheck (lib/tenancy/resource-check.ts), which runs inside
-   * withTenant, so RLS decides what it can see.
+   * withTenant, so RLS scopes what it reads from a tenant table (one built
+   * with tenantPolicy). Only those: the identity tables are control plane
+   * (controlPlanePolicy, `using true`) and show every organization's rows
+   * inside withTenant too, so a check that reads one must filter by the
+   * tenant itself.
    */
   | {
       kind: 'resource';
@@ -293,6 +294,61 @@ function handleError(
 }
 
 /**
+ * The organization a request runs under and the caller's role there, or the
+ * answer that stops it. Called once, after the session resolved and the
+ * input parsed; the ids come out branded because they went in branded (the
+ * session's from the mirror, a named one through isOrganizationId), so
+ * nothing is parsed a second time.
+ *
+ * Until 24 Sep this sat inline in the route as two `let`s filled by an
+ * if/else and then re-parsed into a TenantContext, with the resource check
+ * after it as a separate step.
+ */
+async function authorize<TParams, TQuery, TBody>(
+  authz: Authz<TParams, TQuery, TBody>,
+  input: RouteInput<TParams, TQuery, TBody>,
+  session: Extract<SessionResolution, { kind: 'ok' }>
+): Promise<{ tenant: TenantContext } | { refused: Refusal }> {
+  if (authz.kind === 'explicit-organization') {
+    const organizationId = authz.organizationId(input);
+
+    if (!isOrganizationId(organizationId)) {
+      throw new ValidationError('Invalid organization id');
+    }
+
+    // Naming an organization other than the session's is the point of
+    // these routes. The membership of the named one is the whole check.
+    const access = await ensureOrganizationAccess(organizationId, session.user.id);
+
+    if (!access.authorized) {
+      return { refused: { status: access.status, error: access.error } };
+    }
+
+    return { tenant: { organizationId, userId: session.user.id, role: access.role } };
+  }
+
+  // The organization WorkOS bound the sealed session to, which
+  // resolveSession matched against an active membership in the mirror;
+  // the role comes with it, no second query.
+  const tenant: TenantContext = {
+    organizationId: session.organization.id,
+    userId: session.user.id,
+    role: session.role,
+  };
+
+  if (
+    authz.kind === 'resource' &&
+    !(await runResourceCheck(authz.check, input, tenant.organizationId))
+  ) {
+    // Deliberately the same response as "exists but belongs to someone
+    // else" — a 403 here would confirm the id exists.
+    return { refused: { status: 404, error: 'Not found' } };
+  }
+
+  return { tenant };
+}
+
+/**
  * Authenticated route. Runs, in fixed order:
  * requestId -> origin (non-GET) -> session (resolveSession: expired, inactive,
  * forbidden and unbound stop here) -> input parsing -> organization
@@ -331,6 +387,16 @@ export function defineRoute<
       }
 
       const cookie = request.cookies.get(WORKOS_SESSION_COOKIE)?.value;
+
+      // resolveSession answers 'none' without a cookie too. Answering here
+      // leaves `cookie` a string for the handler's sessionData, which a
+      // 'Session missing' 401 that no request could reach used to narrow.
+      if (!cookie) {
+        const refused = SESSION_REFUSALS.none;
+
+        return finish(fail(envelope, refused.error, refused.status), requestId);
+      }
+
       // A route handler can store a re-issued cookie, so it may refresh an
       // expired session and rebind an unbound one.
       const session = await resolveSession(cookie, { refresh: true });
@@ -344,61 +410,20 @@ export function defineRoute<
       refreshedSessionData = session.refreshedSessionData;
 
       const input = await parseInput(config, request, segment);
+      const authorized = await authorize(config.authz, input, session);
 
-      let organizationId: string;
-      let role: 'owner' | 'member';
+      if ('refused' in authorized) {
+        const { refused } = authorized;
 
-      if (config.authz.kind === 'explicit-organization') {
-        organizationId = config.authz.organizationId(input);
-
-        if (!isOrganizationId(organizationId)) {
-          throw new ValidationError('Invalid organization id');
-        }
-
-        // Naming an organization other than the session's is the point of
-        // these routes. The membership of the named one is the whole check.
-        const access = await ensureOrganizationAccess(organizationId, session.user.id);
-
-        if (!access.authorized) {
-          return finish(fail(envelope, access.error, access.status), requestId, refreshedSessionData);
-        }
-
-        role = access.role;
-      } else {
-        // The organization WorkOS bound the sealed session to, which
-        // resolveSession matched against an active membership in the mirror;
-        // the role comes with it, no second query.
-        organizationId = session.organization.id;
-        role = session.role;
-      }
-
-      const tenant: TenantContext = {
-        organizationId: parseOrganizationId(organizationId),
-        userId: parseUserId(session.user.id),
-        role,
-      };
-
-      if (
-        config.authz.kind === 'resource' &&
-        !(await runResourceCheck(config.authz.check, input, tenant.organizationId))
-      ) {
-        // Deliberately the same response as "exists but belongs to someone
-        // else" — a 403 here would confirm the id exists.
-        return finish(fail(envelope, 'Not found', 404), requestId, refreshedSessionData);
-      }
-
-      const sessionData = refreshedSessionData ?? cookie;
-
-      if (!sessionData) {
-        return finish(fail(envelope, 'Session missing', 401), requestId);
+        return finish(fail(envelope, refused.error, refused.status), requestId, refreshedSessionData);
       }
 
       const result = await config.handler(input, {
         user: session.user,
         organization: session.organization,
         organizations: session.organizations,
-        tenant,
-        sessionData,
+        tenant: authorized.tenant,
+        sessionData: refreshedSessionData ?? cookie,
         requestId,
       });
 

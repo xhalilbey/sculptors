@@ -4,6 +4,7 @@ import {
   identityDb,
   usersRepository,
   type OrganizationId,
+  type UserId,
   type UserRow,
 } from '@/lib/identity';
 import { logger } from '@/lib/logger';
@@ -49,7 +50,8 @@ export { WORKOS_SESSION_COOKIE } from './constants';
 
 /** The signed-in user, as the server holds it. The wire shape is SessionUserDto (lib/workos/dto.ts). */
 export interface AppAuthUser {
-  id: string;
+  /** Our users.id, branded as the row carries it; the WorkOS id is workosUserId. */
+  id: UserId;
   workosUserId: string;
   email: string;
   firstName: string | null;

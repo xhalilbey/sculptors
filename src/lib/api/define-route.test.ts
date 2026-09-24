@@ -83,6 +83,19 @@ describe('defineRoute', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
+  it('answers a request with no session cookie as signed out, before resolving a session', async () => {
+    const handler = vi.fn();
+
+    const response = await defineRoute({ authz: { kind: 'session-organization' }, handler })(
+      new NextRequest('http://localhost:3000/api/x')
+    );
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'Unauthorized. Please log in.' });
+    expect(resolveSession).not.toHaveBeenCalled();
+    expect(handler).not.toHaveBeenCalled();
+  });
+
   it('resolves the session with refresh allowed, from the cookie', async () => {
     resolveSession.mockResolvedValue(session());
 
@@ -103,6 +116,8 @@ describe('defineRoute', () => {
 
   it('authorizes an explicitly named organization by its own membership', async () => {
     resolveSession.mockResolvedValue(session());
+    // The session's role is 'member'; the tenant takes the named organization's.
+    ensureOrganizationAccess.mockResolvedValue({ authorized: true, role: 'owner' });
     const handler = vi.fn().mockResolvedValue({ ok: true });
     const route = defineRoute({
       params: idParams,
@@ -113,7 +128,7 @@ describe('defineRoute', () => {
     await route(request(), segment('org_B'));
 
     expect(ensureOrganizationAccess).toHaveBeenCalledWith('org_B', USER_ID);
-    expect(handler.mock.calls[0]?.[1].tenant.organizationId).toBe('org_B');
+    expect(handler.mock.calls[0]?.[1].tenant).toEqual({ organizationId: 'org_B', userId: USER_ID, role: 'owner' });
   });
 
   it('refuses a named organization the caller is not in', async () => {
@@ -188,7 +203,7 @@ describe('defineRoute', () => {
     })(request());
 
     expect(response.status).toBe(200);
-    expect(handler).toHaveBeenCalled();
+    expect(handler.mock.calls[0]?.[1].tenant).toEqual({ organizationId: 'org_A', userId: USER_ID, role: 'member' });
   });
 
   it('does not accept a bare function as a resource check', () => {
