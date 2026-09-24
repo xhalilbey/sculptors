@@ -15,20 +15,20 @@ export function signInMocks() {
     authenticateWithCode: vi.fn(),
     authenticateWithOrganizationSelection: vi.fn(),
   };
-  const buildSessionContext = vi.fn();
+  const establishSignInSession = vi.fn();
 
   class WorkOSAccountForbiddenError extends Error {}
   class AccountInactiveError extends Error {}
 
   return {
     userManagement,
-    buildSessionContext,
+    establishSignInSession,
     WorkOSAccountForbiddenError,
     AccountInactiveError,
     module: {
       getWorkOSClient: () => ({ userManagement }),
       getWorkOSEnv: () => ({ clientId: 'client_test', cookiePassword: 'x'.repeat(32), appUrl: 'http://localhost:3000' }),
-      buildSessionContext,
+      establishSignInSession,
       WorkOSAccountForbiddenError,
       AccountInactiveError,
       setWorkOSSessionCookie: (response: NextResponse, value: string) =>

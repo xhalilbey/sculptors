@@ -5,7 +5,7 @@ import { logger } from '@/lib/logger';
 import { clientIpFrom } from '@/lib/security/client-ip';
 import {
   AccountInactiveError,
-  buildSessionContext,
+  establishSignInSession,
   getWorkOSClient,
   getWorkOSEnv,
   WorkOSAccountForbiddenError,
@@ -169,19 +169,12 @@ export async function completeSignIn(
   }
 
   try {
-    const built = await buildSessionContext(
-      {
-        user: outcome.user,
-        sessionId: null,
-        organizationId: outcome.organizationId ?? null,
-        role: null,
-        roles: [],
-        permissions: [],
-      },
-      { sessionData: outcome.sealedSession }
-    );
+    const established = await establishSignInSession(outcome.user, {
+      organizationId: outcome.organizationId ?? null,
+      sessionData: outcome.sealedSession,
+    });
 
-    return { kind: 'signed-in', sealedSession: built.refreshedSessionData ?? outcome.sealedSession };
+    return { kind: 'signed-in', sealedSession: established.refreshedSessionData ?? outcome.sealedSession };
   } catch (error) {
     // Outside the allowlist, or a row that is not active (suspended here,
     // deleted in WorkOS): no cookie either way.

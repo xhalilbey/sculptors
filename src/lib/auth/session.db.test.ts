@@ -14,9 +14,9 @@ import type * as Organizations from '@/lib/workos/organizations';
  * organization the user has left is rebound from the newest seal it holds,
  * and a user the mirror has never seen is not let in. At sign-in, an account
  * outside the allowlist is refused before anything is written, a session
- * issued for another organization is bound to one the user is in, and the
- * name a first organization is created with fits the 100 code points a name
- * may have.
+ * issued for another organization is bound to one the user is in (one
+ * already bound to theirs is kept as issued), and the name a first
+ * organization is created with fits the 100 code points a name may have.
  */
 
 let t: TestDb;
@@ -256,22 +256,15 @@ describe('a GET through defineRoute', () => {
 
 describe('sign-in for a suspended user', () => {
   it('is refused before any WorkOS listing or organization creation, and stays suspended', async () => {
-    const { AccountInactiveError, buildSessionContext } = await import('@/lib/workos/auth');
+    const { AccountInactiveError, establishSignInSession } = await import('@/lib/workos/auth');
 
     await t.db.execute(sql`update users set status = 'suspended' where id = ${USER}`);
 
     try {
       await expect(
-        buildSessionContext(
-          {
-            user: { id: 'user_req', email: 'req@example.com', updatedAt: '2026-09-23T00:00:00.000Z' },
-            sessionId: null,
-            organizationId: null,
-            role: null,
-            roles: [],
-            permissions: [],
-          },
-          { sessionData: 'sealed' }
+        establishSignInSession(
+          { id: 'user_req', email: 'req@example.com', updatedAt: '2026-09-23T00:00:00.000Z' },
+          { organizationId: null, sessionData: 'sealed' }
         )
       ).rejects.toBeInstanceOf(AccountInactiveError);
       expect(organizations.listWorkOSMemberships).not.toHaveBeenCalled();
@@ -292,15 +285,12 @@ describe('sign-in session binding', () => {
   });
 
   it('refuses an account outside the allowlist before writing anything', async () => {
-    const { buildSessionContext, WorkOSAccountForbiddenError } = await import('@/lib/workos/auth');
+    const { establishSignInSession, WorkOSAccountForbiddenError } = await import('@/lib/workos/auth');
 
     vi.stubEnv('SCULPTORS_ALLOWED_WORKOS_USER_IDS', 'user_other');
 
     await expect(
-      buildSessionContext(
-        { user: STRANGER, sessionId: null, organizationId: null, role: null, roles: [], permissions: [] },
-        { sessionData: 'sealed' }
-      )
+      establishSignInSession(STRANGER, { organizationId: null, sessionData: 'sealed' })
     ).rejects.toBeInstanceOf(WorkOSAccountForbiddenError);
     expect(writes.called).toEqual([]);
     expect(organizations.listWorkOSMemberships).not.toHaveBeenCalled();
@@ -310,7 +300,7 @@ describe('sign-in session binding', () => {
   });
 
   it('binds a session issued for another organization to one the user is in', async () => {
-    const { buildSessionContext } = await import('@/lib/workos/auth');
+    const { establishSignInSession } = await import('@/lib/workos/auth');
 
     vi.mocked(organizations.listWorkOSMemberships).mockResolvedValueOnce([
       {
@@ -325,22 +315,40 @@ describe('sign-in session binding', () => {
     ]);
     refresh.mockResolvedValue({ authenticated: true, sealedSession: 'sealed-rebound', organizationId: 'org_REQ', role: 'admin' });
 
-    const built = await buildSessionContext(
-      {
-        user: { id: 'user_req', email: 'req@example.com', firstName: 'Req', updatedAt: '2026-09-24T00:00:00.000Z' },
-        sessionId: null,
-        organizationId: 'org_OTHER',
-        role: null,
-        roles: [],
-        permissions: [],
-      },
-      { sessionData: 'sealed' }
+    const established = await establishSignInSession(
+      { id: 'user_req', email: 'req@example.com', firstName: 'Req', updatedAt: '2026-09-24T00:00:00.000Z' },
+      { organizationId: 'org_OTHER', sessionData: 'sealed' }
     );
 
-    expect(built.refreshedSessionData).toBe('sealed-rebound');
+    expect(established.refreshedSessionData).toBe('sealed-rebound');
     expect(opened()).toEqual(['sealed']);
     expect(refresh.mock.calls).toEqual([[{ organizationId: 'org_REQ' }]]);
     expect(organizations.createOrganizationForUser).not.toHaveBeenCalled();
+  });
+
+  it('keeps a session already bound to an organization the user is in, without asking workos again', async () => {
+    const { establishSignInSession } = await import('@/lib/workos/auth');
+
+    vi.mocked(organizations.listWorkOSMemberships).mockResolvedValueOnce([
+      {
+        id: 'om_REQ',
+        organizationId: 'org_REQ',
+        organizationName: 'Req Org',
+        userId: 'user_req',
+        status: 'active',
+        role: { slug: 'admin' },
+        updatedAt: '2026-09-24T00:00:00.000Z',
+      },
+    ]);
+
+    const established = await establishSignInSession(
+      { id: 'user_req', email: 'req@example.com', firstName: 'Req', updatedAt: '2026-09-24T00:00:00.000Z' },
+      { organizationId: 'org_REQ', sessionData: 'sealed' }
+    );
+
+    expect(established).toEqual({});
+    expect(loadSealedSession).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
   });
 
   it('answers a completed sign-in outside the allowlist as forbidden', async () => {
@@ -366,23 +374,16 @@ describe('sign-in for a user with no organization yet', () => {
    * WorkOS is never called.
    */
   async function firstOrganizationName(user: { id: string; firstName: string; lastName?: string }): Promise<string> {
-    const { buildSessionContext } = await import('@/lib/workos/auth');
+    const { establishSignInSession } = await import('@/lib/workos/auth');
 
     vi.stubEnv('SCULPTORS_ALLOWED_WORKOS_USER_IDS', user.id);
     vi.mocked(organizations.listWorkOSMemberships).mockResolvedValueOnce([]);
     vi.mocked(organizations.createOrganizationForUser).mockRejectedValueOnce(new Error('not created in this test'));
 
     await expect(
-      buildSessionContext(
-        {
-          user: { ...user, email: `${user.id}@example.com`, updatedAt: '2026-09-23T00:00:00.000Z' },
-          sessionId: null,
-          organizationId: null,
-          role: null,
-          roles: [],
-          permissions: [],
-        },
-        { sessionData: 'sealed' }
+      establishSignInSession(
+        { ...user, email: `${user.id}@example.com`, updatedAt: '2026-09-23T00:00:00.000Z' },
+        { organizationId: null, sessionData: 'sealed' }
       )
     ).rejects.toThrow('not created in this test');
 

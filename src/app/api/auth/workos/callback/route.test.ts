@@ -38,8 +38,8 @@ function callback(query: string, stateCookie?: string) {
 
 beforeEach(() => {
   for (const fn of Object.values(m.userManagement)) fn.mockReset();
-  m.buildSessionContext.mockReset();
-  m.buildSessionContext.mockResolvedValue({ context: {}, refreshedSessionData: undefined });
+  m.establishSignInSession.mockReset();
+  m.establishSignInSession.mockResolvedValue({});
 });
 
 describe('GET /api/auth/workos/callback', () => {
@@ -91,7 +91,7 @@ describe('GET /api/auth/workos/callback', () => {
 
   it('sends a refused account back to the login with its own error', async () => {
     m.userManagement.authenticateWithCode.mockResolvedValue(authenticated());
-    m.buildSessionContext.mockRejectedValue(new m.WorkOSAccountForbiddenError());
+    m.establishSignInSession.mockRejectedValue(new m.WorkOSAccountForbiddenError());
 
     const response = await callback('code=c1&state=s1', 's1');
 

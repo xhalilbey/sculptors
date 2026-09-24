@@ -40,8 +40,8 @@ function post(
 
 beforeEach(() => {
   for (const fn of Object.values(m.userManagement)) fn.mockReset();
-  m.buildSessionContext.mockReset();
-  m.buildSessionContext.mockResolvedValue({ context: {}, refreshedSessionData: undefined });
+  m.establishSignInSession.mockReset();
+  m.establishSignInSession.mockResolvedValue({});
 });
 
 describe('POST /api/auth/workos/email-verification', () => {
@@ -70,7 +70,7 @@ describe('POST /api/auth/workos/email-verification', () => {
 
   it('answers 503 when the session cannot be established after WorkOS accepted the code', async () => {
     m.userManagement.authenticateWithEmailVerification.mockResolvedValue(authenticated());
-    m.buildSessionContext.mockRejectedValue(new Error('connection refused'));
+    m.establishSignInSession.mockRejectedValue(new Error('connection refused'));
 
     expect((await post()).status).toBe(503);
   });
