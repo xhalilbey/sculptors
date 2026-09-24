@@ -263,11 +263,15 @@ describe('tenantPolicy', () => {
 });
 
 describe('the app role', () => {
-  /** The table privileges the app role holds on public.<table>, in a fixed order. */
+  /**
+   * The table privileges the app role holds on public.<table>, in a fixed order.
+   * The list is every table privilege Postgres 18 knows, MAINTAIN (new in 17)
+   * included, so a grant nobody asked for shows up in the result.
+   */
   async function appRolePrivileges(table: string): Promise<string[]> {
     const held = await rows<{ privilege: string }>(sql`
       select p.privilege
-      from (values (1, 'SELECT'), (2, 'INSERT'), (3, 'UPDATE'), (4, 'DELETE'), (5, 'TRUNCATE'), (6, 'REFERENCES'), (7, 'TRIGGER'))
+      from (values (1, 'SELECT'), (2, 'INSERT'), (3, 'UPDATE'), (4, 'DELETE'), (5, 'TRUNCATE'), (6, 'REFERENCES'), (7, 'TRIGGER'), (8, 'MAINTAIN'))
         as p(n, privilege)
       where has_table_privilege('sculptors_app', ${`public.${table}`}::regclass, p.privilege)
       order by p.n`);
@@ -281,7 +285,8 @@ describe('the app role', () => {
 
   // The app marks identity rows inactive or deleted and never deletes one
   // (0007). TRUNCATE skips row level security altogether, so it must never
-  // be granted either.
+  // be granted either, nor MAINTAIN, which would let the app role take an
+  // ACCESS EXCLUSIVE lock on a table every request reads.
   it('holds select, insert and update on the identity tables, nothing more', async () => {
     for (const table of CONTROL_PLANE) {
       expect(await appRolePrivileges(table), table).toEqual(['SELECT', 'INSERT', 'UPDATE']);
@@ -289,7 +294,7 @@ describe('the app role', () => {
   });
 
   // What 0002's default privileges give a table a later migration creates:
-  // a tenant table needs DELETE, and still no TRUNCATE.
+  // a tenant table needs DELETE, and still no TRUNCATE or MAINTAIN.
   it('gets full DML but not TRUNCATE on a table created later', async () => {
     await t.db.execute(sql`create table public.privilege_probe (id int primary key)`);
 

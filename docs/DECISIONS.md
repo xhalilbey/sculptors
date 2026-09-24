@@ -1143,10 +1143,11 @@ on `users`, `organizations`, `organization_memberships` and
 `workos_webhook_events` from `sculptors_app`, which keeps SELECT, INSERT
 and UPDATE there. The default privileges from `0002` are unchanged, so a
 table a later migration creates still gives the app role SELECT, INSERT,
-UPDATE and DELETE, and never TRUNCATE. Tenant views must be created
-`with (security_invoker = true)`, and there are no materialized views
-over tenant data. `src/db/schema.db.test.ts` pins all of it: the exact
-privileges on each identity table and on a table created later, that the
+UPDATE and DELETE, and never TRUNCATE or MAINTAIN. Tenant views must be
+created `with (security_invoker = true)`, and there are no materialized
+views over tenant data. `src/db/schema.db.test.ts` pins all of it: the
+exact privileges on each identity table and on a table created later,
+checked against every table privilege Postgres 18 has, that the
 app role owns no table in `public`, that it cannot delete an
 organization, that RLS is enabled on partitioned tables too, that
 `public` holds no materialized view and that every view there runs as its
@@ -1163,7 +1164,11 @@ granted DELETE on every table, and a DELETE on `organizations` cascades
 (ON DELETE CASCADE) into its memberships and, once they exist, into the
 tenant tables keyed to it, where the cascade runs past row level
 security. No test looked at privileges, so a TRUNCATE grant, which skips
-RLS altogether, would have passed every test. A view reads its tables as
+RLS altogether, would have passed every test, and so would MAINTAIN (new
+in Postgres 17), which lets its holder LOCK a table in ACCESS EXCLUSIVE
+mode, VACUUM, REINDEX or CLUSTER it. The privilege check first written
+for this entry left MAINTAIN out, so a later grant of it would still have
+passed. A view reads its tables as
 its owner, whom RLS does not bind, unless it is `security_invoker`; a
 materialized view is a copy taken by its owner that no policy can
 protect. The default privileges would make either readable by the app
