@@ -148,6 +148,28 @@ describe('POST /api/auth/workos/webhook, end to end', () => {
     expect((await t.db.execute(row)).rows).toEqual([{ id: 'om_SEAMB', role: 'member', status: 'active' }]);
   });
 
+  it('records and applies an event whose organization name holds a NUL', async () => {
+    vi.stubEnv('WORKOS_WEBHOOK_SECRET', SECRET);
+
+    // The record step stored the payload as jsonb, which refuses a NUL, so
+    // this delivery and every retry of it used to be answered 500.
+    const response = await deliver(
+      wireMembershipEvent('organization_membership.created', 'event_seam_nul', {
+        id: 'om_SEAMNUL',
+        organizationId: 'org_SEAMNUL',
+        userId: 'user_seam',
+        organizationName: 'Nul\u{0} Org',
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(await one(sql`select name from organizations where id = 'org_SEAMNUL'`)).toEqual({ name: 'Nul Org' });
+    expect(await one(sql`select status from organization_memberships where id = 'om_SEAMNUL'`)).toEqual({ status: 'active' });
+    expect(
+      await one(sql`select payload->>'organizationName' as name, processed_at is not null as processed from workos_webhook_events where id = 'event_seam_nul'`)
+    ).toEqual({ name: 'Nul Org', processed: true });
+  });
+
   it('writes the first name, last name and avatar of a user.updated', async () => {
     vi.stubEnv('WORKOS_WEBHOOK_SECRET', SECRET);
 

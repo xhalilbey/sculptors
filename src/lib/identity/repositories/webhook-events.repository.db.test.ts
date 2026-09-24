@@ -39,6 +39,24 @@ describe('webhookEvents.record', () => {
     ]);
   });
 
+  it('stores a payload holding a NUL, in a value or a key at any depth, without it', async () => {
+    // jsonb refuses the \u0000 escape JSON.stringify writes for a NUL, so
+    // this insert used to throw and the route answered every retry 500.
+    const outcome = await webhookEvents.record(db, {
+      id: 'event_nul',
+      type: 'organization.updated',
+      payload: { name: 'Acme\u{0} Ltd', domains: [{ domain: 'a\u{0}.example' }], metadata: { 'k\u{0}ey': 'v\u{0}' }, count: 2 },
+    });
+
+    expect(outcome).toBe('recorded');
+    expect((await read('event_nul'))[0]?.payload).toEqual({
+      name: 'Acme Ltd',
+      domains: [{ domain: 'a.example' }],
+      metadata: { key: 'v' },
+      count: 2,
+    });
+  });
+
   it('reports a redelivery of an unprocessed event as a retry, counts it and clears the error', async () => {
     await webhookEvents.record(db, { id: 'event_retry', type: 'user.updated', payload: { v: 1 } });
     await webhookEvents.markFailed(db, 'event_retry', 'constraint violated');

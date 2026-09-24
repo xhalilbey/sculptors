@@ -10,7 +10,8 @@ import type * as Organizations from '@/lib/workos/organizations';
  * Per-request session resolution against the real mirror (PGlite), with
  * WorkOS's session cookie mocked. What must hold: it writes nothing but a
  * throttled last_seen_at, it never lists memberships in WorkOS or creates an
- * organization, and a suspended user stays out.
+ * organization, and a suspended user stays out. At sign-in, the name a first
+ * organization is created with fits the 100 code points a name may have.
  */
 
 let t: TestDb;
@@ -221,5 +222,52 @@ describe('sign-in for a suspended user', () => {
     } finally {
       await t.db.execute(sql`update users set status = 'active' where id = ${USER}`);
     }
+  });
+});
+
+describe('sign-in for a user with no organization yet', () => {
+  const SUFFIX = "'s Organization";
+
+  /**
+   * Signs a new user in with no WorkOS memberships and returns the name the
+   * first organization would be created with. The creation is refused, so
+   * WorkOS is never called.
+   */
+  async function firstOrganizationName(user: { id: string; firstName: string; lastName?: string }): Promise<string> {
+    const { buildSessionContext } = await import('@/lib/workos/auth');
+
+    vi.stubEnv('SCULPTORS_ALLOWED_WORKOS_USER_IDS', user.id);
+    vi.mocked(organizations.listWorkOSMemberships).mockResolvedValueOnce([]);
+    vi.mocked(organizations.createOrganizationForUser).mockRejectedValueOnce(new Error('not created in this test'));
+
+    await expect(
+      buildSessionContext(
+        {
+          user: { ...user, email: `${user.id}@example.com`, updatedAt: '2026-09-23T00:00:00.000Z' },
+          sessionId: null,
+          organizationId: null,
+          role: null,
+          roles: [],
+          permissions: [],
+        },
+        { sessionData: 'sealed' }
+      )
+    ).rejects.toThrow('not created in this test');
+
+    return vi.mocked(organizations.createOrganizationForUser).mock.lastCall?.[0].name ?? '';
+  }
+
+  it('cuts a long display name by code points, so the name WorkOS gets is exactly 100', async () => {
+    // 120 emoji are 240 UTF-16 units: a cut by units would split a pair.
+    const name = await firstOrganizationName({ id: 'user_long_emoji', firstName: '\u{1F600}'.repeat(120) });
+
+    expect(name).toBe(`${'\u{1F600}'.repeat(100 - SUFFIX.length)}${SUFFIX}`);
+    expect(Array.from(name)).toHaveLength(100);
+  });
+
+  it('leaves no space before the suffix when the cut falls just after one', async () => {
+    const name = await firstOrganizationName({ id: 'user_long_space', firstName: 'x'.repeat(84), lastName: 'Long'.repeat(10) });
+
+    expect(name).toBe(`${'x'.repeat(84)}${SUFFIX}`);
   });
 });

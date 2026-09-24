@@ -49,10 +49,17 @@ describe('applyWebhookEvent', () => {
     expect(await one(sql`select name, plan from organizations where id = 'org_W1'`)).toEqual({ name: 'Second', plan: 'pro' });
   });
 
-  it('mirrors a name the table could not hold instead of failing every retry', async () => {
-    await applyWebhookEvent(event('organization.updated', 'e2b', organization({ id: 'org_W1b', name: `Acme\u{0} ${'x'.repeat(150)}` })));
+  it('records and mirrors a name the table could not hold instead of failing every retry', async () => {
+    const renamed = event('organization.updated', 'e2b', organization({ id: 'org_W1b', name: `Acme\u{0} ${'x'.repeat(150)}` }));
+
+    // In the route's order: recording the NUL used to throw before apply ran.
+    expect(await recordWebhookEvent(renamed)).toBe('recorded');
+    await applyWebhookEvent(renamed);
 
     expect(await one(sql`select name from organizations where id = 'org_W1b'`)).toEqual({ name: `Acme ${'x'.repeat(95)}` });
+    expect(await one(sql`select payload->>'name' as name from workos_webhook_events where id = 'e2b'`)).toEqual({
+      name: `Acme ${'x'.repeat(150)}`,
+    });
   });
 
   it('soft deletes an organization', async () => {

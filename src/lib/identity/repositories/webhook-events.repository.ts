@@ -7,6 +7,42 @@ import { unwrap, type IdentityDb } from '../internal/handle';
 export type RecordOutcome = 'recorded' | 'retry' | 'duplicate';
 
 /**
+ * A payload as a jsonb column can hold it: U+0000 removed from every string
+ * and key, at any depth. JSON.stringify writes a NUL as the escape \u0000,
+ * which Postgres refuses in jsonb ("unsupported Unicode escape sequence"),
+ * so one NUL in an event (an organization name or a metadata value set
+ * through the WorkOS API) failed this insert, and with it every retry of
+ * that event, before apply was reached. Only this audit copy is changed:
+ * the route applies the verified event itself, and the organizations
+ * repository drops a NUL from the names it mirrors (mirroredName). Anything
+ * that is not a string, an array or a plain object is left for
+ * JSON.stringify.
+ */
+function storable(value: unknown): unknown {
+  if (typeof value === 'string') return value.replaceAll('\u0000', '');
+
+  if (Array.isArray(value)) return value.map(storable);
+
+  if (isPlainObject(value)) return storableObject(value);
+
+  return value;
+}
+
+function storableObject(value: object): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value).map(([key, inner]) => [key.replaceAll('\u0000', ''), storable(inner)])
+  );
+}
+
+function isPlainObject(value: unknown): value is object {
+  if (typeof value !== 'object' || value === null) return false;
+
+  const prototype: unknown = Object.getPrototypeOf(value);
+
+  return prototype === Object.prototype || prototype === null;
+}
+
+/**
  * Record an event by its WorkOS id before applying it, in one statement:
  *
  * - a new id is inserted: 'recorded', apply it;
@@ -20,7 +56,8 @@ export type RecordOutcome = 'recorded' | 'retry' | 'duplicate';
  * version carries the updating transaction's id). Applying is idempotent
  * (every mirror write is an upsert ordered by workos_updated_at), so a retry
  * converges on the same rows and two concurrent retries of one event cannot
- * leave an older state behind.
+ * leave an older state behind. The payload is stored without NULs
+ * (storable, above).
  */
 export async function record(
   handle: IdentityDb,
@@ -30,7 +67,7 @@ export async function record(
 
   const rows = await db
     .insert(workosWebhookEvents)
-    .values(event)
+    .values({ ...event, payload: storableObject(event.payload) })
     .onConflictDoUpdate({
       target: workosWebhookEvents.id,
       set: { attempts: sql`${sql.raw('workos_webhook_events.attempts')} + 1`, error: null },
