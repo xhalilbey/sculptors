@@ -42,6 +42,29 @@ export function getDb(): Db {
       maxLifetimeSeconds: 900,
       // pg ignores channel_binding in the URL; this is the only switch.
       enableChannelBinding: true,
+      // TCP keepalive, so a connection the network dropped while idle fails
+      // on its own instead of on the next query that borrows it.
+      keepAlive: true,
+    });
+
+    // node-postgres re-emits an idle client's error (the server ended the
+    // connection, a reset socket) on the pool, and an 'error' event nobody
+    // listens to is thrown, which ends the process. Until 24 Sep 2026 nothing
+    // listened. The pool has already dropped the client, so logging is all
+    // there is to do. console.error rather than lib/logger, which src/db sits
+    // below (docs/architecture/boundaries.md); the line has the logger's
+    // production shape, without the message, which can quote the server.
+    // Attached here, inside the guard, so dev reloads do not stack listeners.
+    pool.on('error', (error) => {
+      console.error(
+        JSON.stringify({
+          error: { name: error.name, code: (error as { code?: unknown }).code },
+          timestamp: new Date().toISOString(),
+          severity: 'ERROR',
+          level: 'error',
+          message: 'Idle database client failed',
+        })
+      );
     });
 
     globalForDb.__sculptorsDb = drizzle({ client: pool, casing: 'snake_case' });
