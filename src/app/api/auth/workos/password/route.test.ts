@@ -29,11 +29,14 @@ const m = (() => {
   return mocks.current;
 })();
 
-function post(body: unknown = { email: 'ada@example.com', password: 'correct horse' }) {
+function post(
+  body: unknown = { email: 'ada@example.com', password: 'correct horse' },
+  headers: Record<string, string> = {}
+) {
   return POST(
     new NextRequest('http://localhost:3000/api/auth/workos/password', {
       method: 'POST',
-      headers: { origin: 'http://localhost:3000', 'content-type': 'application/json', 'user-agent': 'vitest' },
+      headers: { origin: 'http://localhost:3000', 'content-type': 'application/json', 'user-agent': 'vitest', ...headers },
       body: JSON.stringify(body),
     })
   );
@@ -69,6 +72,16 @@ describe('POST /api/auth/workos/password', () => {
     expect(m.buildSessionContext).toHaveBeenCalledWith(
       expect.objectContaining({ organizationId: 'org_A' }),
       { sessionData: 'sealed-1' }
+    );
+  });
+
+  it('sends workos the address our edge appended, not a forged one', async () => {
+    m.userManagement.authenticateWithPassword.mockResolvedValue(authenticated('sealed-1', 'org_A'));
+
+    await post(undefined, { 'x-forwarded-for': 'forged, 203.0.113.5' });
+
+    expect(m.userManagement.authenticateWithPassword).toHaveBeenCalledWith(
+      expect.objectContaining({ ipAddress: '203.0.113.5' })
     );
   });
 

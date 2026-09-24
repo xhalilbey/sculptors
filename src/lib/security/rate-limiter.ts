@@ -4,6 +4,8 @@
  * Uses sliding window algorithm
  */
 
+import { clientIpFrom } from './client-ip';
+
 interface RateLimitEntry {
   resetTime: number;
   attempts: number[];
@@ -140,63 +142,17 @@ export const rateLimit = (
 };
 
 /**
- * Extract identifier from request (IP or user ID)
+ * The rate-limit key for a request: the caller's address as our edge saw it
+ * (clientIpFrom, which trusts one hop), or one shared 'ip:unknown' bucket
+ * when no proxy header names an address.
+ *
+ * Before 24 Sep this also preferred `request.ip`, which Next 15 removed from
+ * NextRequest, so the branch never ran; and without proxy headers it keyed
+ * on the `sub` of a Bearer token it decoded without verifying, a key the
+ * caller chose.
  */
-export const getIdentifier = (request: Request & { ip?: string | null }): string => {
-  // Prefer platform-provided IP (Next.js sets request.ip when behind trusted proxy)
-  if (request.ip) {
-    return `ip:${request.ip}`;
-  }
+export const getIdentifier = (request: Request): string => {
+  const ip = clientIpFrom(request.headers);
 
-  // Fall back to standard reverse proxy headers.
-  //
-  // Take the LAST entry, not the first. X-Forwarded-For is append-only: each
-  // proxy adds the address it received the request from, so the rightmost
-  // entry is the one written by our own edge and the leftmost is whatever the
-  // client claimed. Reading the first entry let a caller pick its own
-  // rate-limit key by sending its own X-Forwarded-For, which made the login
-  // limiter bypassable by rotating one header.
-  //
-  // This trusts exactly one hop. If the deployment ever sits behind an
-  // additional proxy, this needs to skip that many entries from the right.
-  const forwardedFor = request.headers.get('x-forwarded-for');
-
-  if (forwardedFor) {
-    const hops = forwardedFor
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean);
-    const clientIp = hops.at(-1);
-
-    if (clientIp) {
-      return `ip:${clientIp}`;
-    }
-  }
-
-  const realIp = request.headers.get('x-real-ip');
-
-  if (realIp) {
-    return `ip:${realIp}`;
-  }
-
-  // As a last resort, fall back to auth subject if present
-  const authHeader = request.headers.get('authorization');
-
-  if (authHeader?.startsWith('Bearer ')) {
-    try {
-      const token = authHeader.replace('Bearer ', '');
-      const payload = JSON.parse(
-        Buffer.from(token.split('.')[1] ?? '', 'base64').toString()
-      );
-
-      if (payload.sub) {
-        return `user:${payload.sub}`;
-      }
-    } catch {
-      // Ignore malformed tokens for rate limiting purposes
-    }
-  }
-
-  // Final fallback
-  return 'ip:unknown';
+  return ip ? `ip:${ip}` : 'ip:unknown';
 };

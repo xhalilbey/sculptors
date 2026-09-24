@@ -907,3 +907,33 @@ unchanged. npm 10 can no longer resolve a vitest upgrade by itself (its
 peer resolver fails on vite's optional `@vitejs/devtools` peer, which
 names `vitest@*`); the 4.1.11 entries came from npm 11's resolution and
 were checked with npm 10's `npm ci`.
+
+## 2026-09-24 — The client address is the rightmost forwarded hop, everywhere
+
+**Decision.** `src/lib/security/client-ip.ts` exports `clientIpFrom(headers)`:
+the rightmost non-empty `X-Forwarded-For` entry, else a non-empty
+`X-Real-IP`, else null. The rate limiter's `getIdentifier` keys on it
+(`ip:<address>`, or one shared `ip:unknown` bucket), and
+`signInContextFrom` sends it to WorkOS as `ipAddress`, which is left out
+when it is null. It trusts exactly one hop: Cloud Run, reached directly.
+
+**Why.** There were two parsers with opposite trust rules. The limiter read
+the rightmost entry, the one our edge appends; sign-in sent WorkOS the
+leftmost, the one the caller writes, so the address WorkOS records and
+checks at sign-in was whatever the caller chose. One helper keeps the two
+from drifting apart again. The limiter's `request.ip` branch could never
+run (Next 15 removed `NextRequest.ip`), and its last fallback keyed on the
+`sub` of a Bearer token it decoded without verifying, a bucket the caller
+names. Both are gone: a request without proxy headers lands in
+`ip:unknown`, as one without a token already did. Rejected: a configurable
+hop count now, with no deployment behind a second proxy to set it for; and
+keeping the leftmost entry for WorkOS as "the real client", which holds
+only while the client is honest.
+
+**Consequence.** Behind an external load balancer or any other extra
+proxy, the rightmost entry would be that proxy's address, for WorkOS and
+the limiter alike; the hop count changes when the deploy is wired, and is
+deferred until then. `client-ip.test.ts` pins the rightmost-hop rule, and
+the password route test pins that WorkOS receives the appended address,
+not a forged prefix. Keys for real traffic through the middleware are
+unchanged.

@@ -2,6 +2,7 @@ import 'server-only';
 
 import { AuthenticationException, type AuthenticationResponse } from '@workos-inc/node';
 import { logger } from '@/lib/logger';
+import { clientIpFrom } from '@/lib/security/client-ip';
 import {
   AccountInactiveError,
   buildSessionContext,
@@ -194,12 +195,15 @@ export async function completeSignIn(
   }
 }
 
-/** The caller's address and agent, as WorkOS wants them for its own checks. */
+/**
+ * The caller's address and agent, as WorkOS wants them for its own checks.
+ * The address is the one our edge appended (clientIpFrom), the same one the
+ * rate limiter keys on; before 24 Sep this sent the leftmost X-Forwarded-For
+ * entry, which the caller writes.
+ */
 export function signInContextFrom(headers: Headers): SignInContext {
   return {
-    // The security plan replaces this with the trusted-hop client IP; until
-    // then it is what the email-verification route always sent.
-    ipAddress: headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
+    ipAddress: clientIpFrom(headers),
     userAgent: headers.get('user-agent') || null,
   };
 }
