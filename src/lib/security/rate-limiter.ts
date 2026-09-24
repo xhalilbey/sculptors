@@ -11,12 +11,14 @@ interface RateLimitEntry {
   attempts: number[];
 }
 
-interface RateLimitConfig {
+/** One budget: at most `maxAttempts` per `windowMs`. */
+export interface RateLimitConfig {
   maxAttempts: number;
   windowMs: number;
 }
 
-interface RateLimitResult {
+/** The answer to one attempt, with the time its window resets. */
+export interface RateLimitResult {
   allowed: boolean;
   remaining: number;
   resetTime: number;
@@ -33,9 +35,12 @@ let cleanupTimer: NodeJS.Timeout | null = null;
  * Rate limit configurations for different endpoints
  */
 export const RATE_LIMITS = {
-  // Authentication endpoints
-  LOGIN: {
-    maxAttempts: 5,
+  // Every credential submission from one address, across the password,
+  // email-code and password-reset routes together (src/middleware.ts).
+  // Before 24 Sep this was LOGIN, 5 per 15 minutes, spent on /auth/* page
+  // views, where no credential is checked, while the POSTs went unthrottled.
+  AUTH_SUBMIT: {
+    maxAttempts: 10,
     windowMs: 15 * 60 * 1000, // 15 minutes
   },
   // API endpoints

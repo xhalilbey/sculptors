@@ -156,6 +156,9 @@ middleware code this phase kept frozen:
   `/api/auth/`. The limiter is also per instance, in memory. Its unused
   `SIGNUP`/`FORGOT_PASSWORD`/`VERIFY_EMAIL` budgets were deleted with the
   other dead exports; set the budgets when the routes are wired.
+  *(Done 24 Sep 2026 for a per-address budget; see "Sign-in submissions are
+  throttled, page views are not". Still in memory and per instance;
+  per-email keys wait for a shared store.)*
 - There is no page that completes a WorkOS password reset.
   `POST /api/auth/workos/password-reset` still has WorkOS send the email, but
   the deleted `/auth/reset-password` page was Supabase-only (it waited for a
@@ -937,3 +940,46 @@ deferred until then. `client-ip.test.ts` pins the rightmost-hop rule, and
 the password route test pins that WorkOS receives the appended address,
 not a forged prefix. Keys for real traffic through the middleware are
 unchanged.
+
+## 2026-09-24 — Sign-in submissions are throttled, page views are not
+
+**Decision.** `src/middleware.ts` puts
+`POST /api/auth/workos/{password,email-verification,password-reset}` on one
+budget, `RATE_LIMITS.AUTH_SUBMIT`: ten submissions per address per 15
+minutes, the three routes together (one constant key, `auth-submit`, on the
+`clientIpFrom` address). The eleventh is a 429 in the routes' own envelope,
+`{ success: false, error: 'Too many attempts. Please wait a few minutes and
+try again.' }`, with `Retry-After`. The path is matched after decoding:
+Next 16.3's production route matcher also sends
+`/api/auth/workos/%70assword` and `/api/auth/workos%2Fpassword` to the
+password handler, while the middleware sees them as sent. The `LOGIN`
+budget, five per 15 minutes on every `/auth/*` page view, is gone. The
+webhook, the login GET, the callback, `me` and logout stay outside the
+budget, and development still skips it. The two 429 answers share one
+builder, `tooManyRequests`.
+
+**Why.** "Carried into the Neon phase" deferred this until the routes were
+wired, and they are: the login page posts to all three, and nothing
+throttled them, since `LOGIN` matched only `/auth/` pages and `API_READ`
+skips `/api/auth/`. The page budget throttled nothing an attacker needs (a
+page view checks no credential) and turned a sixth load of the login page
+within 15 minutes into a 429. One bucket for the three routes means guesses
+cannot be spread across them. The body is JSON because the login page reads
+`response.json()` and toasts `error`. Rejected: a key per email (or per
+pending token) as well. It needs the parsed body, so it belongs in the
+routes, and with sign-in closed to a few allowlisted accounts a per-email
+lock would let anyone who knows an address lock its owner out; on
+per-instance counters it would not hold either. Rejected: a generous page
+budget, which would still protect nothing.
+
+**Consequence.** Users behind one NAT share ten attempts per 15 minutes.
+The counters are in memory and per instance, so on Cloud Run each instance
+keeps its own ten; a shared store (a Postgres table, or an edge rule in
+front of these three paths) is what would make the budget hold across
+instances, and what per-email keys wait for. `password-reset` still answers
+`{ success: true }` until the budget is spent, and the login page does not
+read that answer, so a throttled reset request shows the same neutral toast
+as any other. WorkOS's own limits still apply behind this one.
+`src/middleware.test.ts` pins the budget, the shared bucket, the key per
+address, the encoded path, the development exemption, and that pages, the
+webhook and the AuthKit round trip spend none of it.
