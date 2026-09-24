@@ -1778,8 +1778,10 @@ body:has(.landing-night:not([data-theme='dark'])) {
 /*
  * Sectors (sector-showcase.tsx). The band stays the logo strip's (owner's
  * direction, 24 Sep 2026: only the card is cream, the ground is the
- * branding band's). Everything sits on an 8px scale inside one 1200px
- * measure:
+ * branding band's), in the page's own cream ("the same as the part
+ * below"), with the band running on under it so the two stay apart ("do
+ * not merge it with the part below"). Everything sits on an 8px scale
+ * inside one 1200px measure:
  *
  *   tabs   six equal cells, 72px tall, on the band; the chosen one lights
  *          up and a 2px lava bar under it sits on the card's top edge
@@ -1796,11 +1798,13 @@ body:has(.landing-night:not([data-theme='dark'])) {
   --band-ink: #f3f4f0;
   --band-soft: rgba(243, 244, 240, 0.56);
   --band-line: rgba(243, 244, 240, 0.12);
-  --card: #f1ede5;
-  --card-ink: #1b3139;
-  --card-soft: rgba(27, 49, 57, 0.66);
-  --card-faint: rgba(27, 49, 57, 0.42);
-  --card-line: rgba(27, 49, 57, 0.14);
+  /* The page's ground and ink, so the card is the page below in either
+     theme; its softer inks are mixed from the one ink. */
+  --card: var(--color-lp-ground);
+  --card-ink: var(--color-lp-ink);
+  --card-soft: color-mix(in srgb, var(--color-lp-ink) 66%, transparent);
+  --card-faint: color-mix(in srgb, var(--color-lp-ink) 42%, transparent);
+  --card-line: color-mix(in srgb, var(--color-lp-ink) 14%, transparent);
   --accent: #ff3621;
   padding: 96px 24px;
   background: var(--band);

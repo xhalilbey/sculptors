@@ -6,7 +6,8 @@ import { useState } from 'react';
 /*
  * Where the agents sell -- the sectors we support (owner's direction, 24 Sep
  * 2026). It continues the logo strip's dark band, so the brand screen runs
- * on under it; only the card is cream. Our own shape, not Databricks' pill
+ * on under it; only the card is light, in the page's own cream, with the band
+ * under it too. Our own shape, not Databricks' pill
  * tabs: six equal cells in the header's pixel capitals, the chosen one lit,
  * with a lava bar that sits on the card's top edge. Inside the
  * card nothing is boxed: a chart of what the agent moves on the left, a
