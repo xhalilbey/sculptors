@@ -1371,8 +1371,9 @@ import is written, test files included, since a test sits in its layer and
 is held to it. `src/eslint-config.test.ts` lints one probe import per rule
 at a path that does not exist, through the real config, and fails if a zone
 stops matching (a glob that never matches fails silently otherwise): every
-forbidden layer pair, relatively and by alias, `lib/workos` from each UI
-folder, and the imports that must stay allowed (`infrastructure/` to
-`application/ports`, `ui/` to `api/`, `api/` to `application/`, a route and
-`lib/` to `lib/workos`). `docs/architecture/boundaries.md` says how each
-half of the slice rules is checked and lists the `lib/workos` row.
+forbidden layer pair, relatively and by alias, `domain/` to `ui/` from a
+test file, `lib/workos` from each UI folder, and the imports that must
+stay allowed (`infrastructure/` to `application/ports`, `ui/` to `api/`,
+`api/` to `application/`, a route and `lib/` to `lib/workos`).
+`docs/architecture/boundaries.md` says how each half of the slice rules
+is checked and lists the `lib/workos` row.

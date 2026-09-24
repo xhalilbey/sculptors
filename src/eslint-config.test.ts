@@ -1,5 +1,5 @@
 import { ESLint } from 'eslint';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 /**
  * The layer fences in eslint.config.mjs fire on the file an import resolves
@@ -14,6 +14,32 @@ import { describe, expect, it } from 'vitest';
 
 const eslint = new ESLint();
 
+/**
+ * Every sibling-layer import a slice forbids, spelled relatively as the
+ * slices write them. Each is also probed through the `@/` alias.
+ */
+const FORBIDDEN_LAYER_IMPORTS: Array<[layer: string, into: string, source: string]> = [
+  ['domain', 'ui', "import { formatValue } from '../ui/format';"],
+  ['domain', 'application', "import type { MetricsSource } from '../application/ports';"],
+  ['domain', 'infrastructure', "import { createDemoMetricsSource } from '../infrastructure/demo-metrics-source';"],
+  ['domain', 'api', "import { fetchOverview } from '../api/client';"],
+  ['application', 'api', "import { fetchOverview } from '../api/client';"],
+  ['application', 'ui', "import { formatValue } from '../ui/format';"],
+  ['infrastructure', 'api', "import type { OverviewDto } from '../api/schemas';"],
+  ['infrastructure', 'ui', "import { formatValue } from '../ui/format';"],
+];
+
+// The first lint loads eslint.config.mjs and everything it imports
+// (eslint-config-next with Next's compiled Babel, typescript-eslint with
+// TypeScript itself, the React, a11y and import plugins), which takes well
+// over a second on an idle machine and more beside the PGlite files in CI.
+// Doing it here, with room to spare, keeps that cost out of the first case's
+// 5 s budget, and a slow load then fails as this hook rather than as a
+// timeout on whichever probe happened to run first.
+beforeAll(async () => {
+  await eslint.calculateConfigForFile('src/features/metrics/domain/probe.ts');
+}, 30_000);
+
 async function boundaryErrors(filePath: string, source: string): Promise<string[]> {
   const results = await eslint.lintText(`${source}\n`, { filePath });
 
@@ -24,33 +50,33 @@ async function boundaryErrors(filePath: string, source: string): Promise<string[
 }
 
 describe('eslint.config.mjs slice layers', () => {
-  it.each([
-    ['domain', 'ui', "import { formatValue } from '../ui/format';"],
-    ['domain', 'application', "import type { MetricsSource } from '../application/ports';"],
-    ['domain', 'infrastructure', "import { createDemoMetricsSource } from '../infrastructure/demo-metrics-source';"],
-    ['domain', 'api', "import { fetchOverview } from '../api/client';"],
-    ['application', 'api', "import { fetchOverview } from '../api/client';"],
-    ['application', 'ui', "import { formatValue } from '../ui/format';"],
-    ['infrastructure', 'api', "import type { OverviewDto } from '../api/schemas';"],
-    ['infrastructure', 'ui', "import { formatValue } from '../ui/format';"],
-  ])('refuses a relative import from %s/ into %s/', async (layer, _into, source) => {
-    const errors = await boundaryErrors(`src/features/metrics/${layer}/probe.ts`, source);
+  it.each(FORBIDDEN_LAYER_IMPORTS)(
+    'refuses a relative import from %s/ into %s/',
+    async (layer, _into, source) => {
+      const errors = await boundaryErrors(`src/features/metrics/${layer}/probe.ts`, source);
 
-    expect(errors).toHaveLength(1);
-  });
+      expect(errors).toHaveLength(1);
+    }
+  );
 
-  it('refuses the same import spelled with the alias, and in a test file', async () => {
-    const aliased = await boundaryErrors(
-      'src/features/metrics/domain/probe.ts',
-      "import { formatValue } from '@/features/metrics/ui/format';"
-    );
-    const inTest = await boundaryErrors(
+  it.each(FORBIDDEN_LAYER_IMPORTS)(
+    'refuses the aliased import from %s/ into %s/',
+    async (layer, _into, source) => {
+      const aliased = source.replace("'../", "'@/features/metrics/");
+      const errors = await boundaryErrors(`src/features/metrics/${layer}/probe.ts`, aliased);
+
+      expect(aliased).toContain("'@/features/metrics/");
+      expect(errors).toHaveLength(1);
+    }
+  );
+
+  it('refuses a relative import from domain/ into ui/ in a test file', async () => {
+    const errors = await boundaryErrors(
       'src/features/metrics/domain/probe.test.ts',
       "import { formatValue } from '../ui/format';"
     );
 
-    expect(aliased).toHaveLength(1);
-    expect(inTest).toHaveLength(1);
+    expect(errors).toHaveLength(1);
   });
 
   it.each([
