@@ -1,9 +1,12 @@
 import { z } from 'zod';
+import { SOURCE_KINDS } from '../application/ports';
 import { METRIC_KEYS, REVENUE_KPIS, REVENUE_SOURCES } from '../domain/metrics';
 import {
   customRangeProblem,
+  DEFAULT_PRESET,
   GRANULARITIES,
   granularitiesFor,
+  INSTANT,
   periodOf,
   PRESETS,
   type Granularity,
@@ -27,7 +30,7 @@ const presetOrCustom = z.enum([...PRESETS, 'custom']);
 const granularitySchema = z.enum(GRANULARITIES);
 
 const selectionFields = {
-  range: presetOrCustom.default('30d'),
+  range: presetOrCustom.default(DEFAULT_PRESET),
   from: z.iso.date().optional(),
   to: z.iso.date().optional(),
 };
@@ -58,14 +61,17 @@ export const metricParamsSchema = z.object({
   metric: z.enum(METRIC_KEYS),
 });
 
-/** A bucket size the period does not offer is a 400; a missing one is the period's default. */
+/**
+ * A bucket size the period does not offer is a 400; a missing one is the
+ * period's default. The second check sees only a range the first accepted:
+ * the transform between them runs only when there are no issues.
+ */
 export const metricDetailQuerySchema = z
   .object({ ...selectionFields, granularity: granularitySchema.optional() })
   .superRefine(checkCustom)
   .transform((input) => ({ selection: toSelection(input), granularity: input.granularity }))
   .superRefine(({ selection, granularity }, context) => {
     if (!granularity) return;
-    if ('from' in selection && customRangeProblem(selection.from, selection.to, new Date())) return;
 
     const offered: readonly Granularity[] = granularitiesFor(periodOf(selection, new Date()));
 
@@ -75,10 +81,10 @@ export const metricDetailQuerySchema = z
   });
 
 const isoDate = z.iso.date();
-const instant = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:00:00Z$/);
+const instant = z.string().regex(INSTANT);
 const interval = z.object({ start: instant, end: instant });
 const change = z.object({ absolute: z.number(), ratio: z.number().nullable() });
-const sourceKind = z.enum(['demo', 'live']);
+const sourceKind = z.enum(SOURCE_KINDS);
 const selection = z.union([z.object({ preset: z.enum(PRESETS) }), z.object({ from: isoDate, to: isoDate })]);
 
 const seriesPoint = z.object({
@@ -140,6 +146,5 @@ export const metricDetailResponseSchema = z.object({ success: z.literal(true), d
 
 export type OverviewDto = z.infer<typeof overviewSchema>;
 export type MetricDetailDto = z.infer<typeof metricDetailSchema>;
-export type SeriesPointDto = z.infer<typeof seriesPoint>;
 export type OverviewResponse = z.infer<typeof overviewResponseSchema>;
 export type MetricDetailResponse = z.infer<typeof metricDetailResponseSchema>;

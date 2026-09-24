@@ -5,7 +5,8 @@ import { cn } from '@/lib/utils';
 
 /**
  * A row of mutually exclusive choices (a bucket size). The chosen one wears
- * the brand button's face; the rest are quiet text on the track.
+ * the brand button's face; the rest are quiet text on the track. A null
+ * value chooses none, for a page still waiting to learn which one it is.
  */
 export function Segmented<T extends string>({
   label,
@@ -15,7 +16,7 @@ export function Segmented<T extends string>({
 }: {
   label: string;
   options: ReadonlyArray<{ value: T; label: string; title?: string; disabled?: boolean }>;
-  value: T;
+  value: T | null;
   onChange: (value: T) => void;
 }) {
   return (

@@ -13,8 +13,8 @@ import { changeBetween, directionOf, verdictOf } from '@/lib/change';
 import { cn } from '@/lib/utils';
 import { selectionQuery } from '../api/client';
 import type { MetricDetailDto } from '../api/schemas';
-import { METRICS, type MetricKey } from '../domain/metrics';
-import { GRANULARITIES, isGranularity, type Granularity, type RangeSelection } from '../domain/time';
+import { METRICS, type MetricDefinition, type MetricKey } from '../domain/metrics';
+import { dateOf, GRANULARITIES, isGranularity, type Granularity, type RangeSelection } from '../domain/time';
 import { Segmented } from './controls';
 import { formatBucket, formatMetricValue, formatPartialNote, formatPeriod, formatTick } from './format';
 import { RangeBar } from './range-bar';
@@ -35,7 +35,7 @@ function downloadCsv(detail: MetricDetailDto) {
   const link = document.createElement('a');
 
   link.href = url;
-  link.download = `sculptors-${detail.metric}-${detail.period.start.slice(0, 10)}-${detail.granularity}.csv`;
+  link.download = `sculptors-${detail.metric}-${dateOf(detail.period.start)}-${detail.granularity}.csv`;
   link.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
@@ -55,13 +55,8 @@ export function MetricDetailScreen({ metric }: { metric: MetricKey }) {
   const pathname = usePathname();
   const selection = useMemo(() => selectionFromParams(searchParams), [searchParams]);
   const requested = searchParams.get('granularity');
-  const { data, error, loading, retry } = useMetricDetail(
-    metric,
-    selection,
-    requested && isGranularity(requested) ? requested : null
-  );
-  const granularity = data?.granularity ?? 'day';
-  const format = (value: number) => formatMetricValue(value, definition.unit, data?.currency ?? 'USD');
+  const requestedGranularity = requested && isGranularity(requested) ? requested : null;
+  const { data, error, loading, retry } = useMetricDetail(metric, selection, requestedGranularity);
   const query = selectionQuery(selection);
 
   // A new range lets the server pick its bucket size; a new bucket size keeps the range.
@@ -74,16 +69,6 @@ export function MetricDetailScreen({ metric }: { metric: MetricKey }) {
     nextQuery.set('granularity', next);
     router.replace(`${pathname}?${nextQuery.toString()}`, { scroll: false });
   };
-
-  const points: ChartPoint[] = (data?.points ?? []).map((point) => ({
-    tick: formatTick(point, granularity),
-    label: formatBucket(point, granularity),
-    note: formatPartialNote(point, granularity),
-    partial: point.partial,
-    value: point.value,
-    previous: point.previous,
-  }));
-  const hasPartial = points.some((point) => point.partial);
 
   return (
     <section className="min-h-full px-6 pb-14 pt-6 text-[var(--dashboard-text)] lg:px-10">
@@ -109,7 +94,8 @@ export function MetricDetailScreen({ metric }: { metric: MetricKey }) {
             label: GRANULARITY_LABELS[value],
             disabled: !data?.granularities.includes(value),
           }))}
-          value={granularity}
+          // Until the answer arrives, the size the URL asks for, if it is one; else none.
+          value={data?.granularity ?? requestedGranularity}
           onChange={onGranularityChange}
         />
         <button
@@ -139,87 +125,7 @@ export function MetricDetailScreen({ metric }: { metric: MetricKey }) {
       ) : null}
 
       {data ? (
-        <div className={cn('transition-opacity duration-200', loading && 'opacity-60')} aria-busy={loading}>
-          <div className="mt-8 flex flex-wrap items-end gap-x-4 gap-y-2">
-            <p className="text-[48px] font-semibold leading-none tracking-[-0.03em]">{format(data.value)}</p>
-            <DeltaPill change={data.change} higherIsBetter={definition.higherIsBetter} tone={theme} className="mb-1.5" />
-          </div>
-          <p className="mt-2 text-[13px] text-[var(--dashboard-text-muted)]">
-            {definition.caption} · {formatPeriod(data.period)} · {format(data.previous)} in{' '}
-            {formatPeriod(data.comparison)}
-          </p>
-
-          <div className={cn(theme === 'dark' ? darkCard : lightCard, 'mt-6 p-6')}>
-            <ChartLegend
-              color={CHART_BLUE[theme]}
-              labels={SERIES_LABELS}
-              tone={theme}
-              partialLabel={hasPartial ? `Partial ${granularity}` : undefined}
-            />
-            <div className="mt-3">
-              <LineChart
-                points={points}
-                height={360}
-                color={CHART_BLUE[theme]}
-                tone={theme}
-                formatValue={format}
-                formatAxis={(value) => formatMetricValue(value, definition.unit, data.currency, { compact: true })}
-                ariaLabel={`${definition.label} by ${granularity}, ${formatPeriod(data.period)}, against the comparison period`}
-                seriesLabels={SERIES_LABELS}
-              />
-            </div>
-          </div>
-
-          <div className="mt-6 overflow-hidden rounded-[16px] border border-[var(--dashboard-line)]">
-            <div className="max-h-[520px] overflow-auto">
-              <table className="w-full border-collapse text-[13px]">
-                <caption className="sr-only">
-                  {definition.label} by {granularity}, newest first, with the comparison period
-                </caption>
-                <thead className="sticky top-0 z-10 bg-[var(--dashboard-table-head)] text-left text-[12px] font-semibold text-[var(--dashboard-text-muted)]">
-                  <tr>
-                    <th scope="col" className="px-4 py-2.5 font-semibold">
-                      {GRANULARITY_LABELS[granularity]}
-                    </th>
-                    <th scope="col" className="px-4 py-2.5 text-right font-semibold">
-                      {definition.label}
-                    </th>
-                    <th scope="col" className="px-4 py-2.5 text-right font-semibold">
-                      Comparison period
-                    </th>
-                    <th scope="col" className="px-4 py-2.5 text-right font-semibold">
-                      Change
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="tabular-nums">
-                  {[...data.points].reverse().map((point) => {
-                    const change = changeBetween(point.value, point.previous);
-                    const direction = directionOf(change);
-                    const verdict = verdictOf(direction, definition.higherIsBetter);
-
-                    return (
-                      <tr key={point.start} className="border-t border-[var(--dashboard-line)]">
-                        <th scope="row" className="px-4 py-2.5 text-left font-medium text-[var(--dashboard-text)]">
-                          {formatBucket(point, granularity)}
-                          {point.partial ? <span className="ml-2 text-[12px] font-normal text-[var(--dashboard-text-muted)]">partial</span> : null}
-                        </th>
-                        <td className="px-4 py-2.5 text-right text-[var(--dashboard-text)]">{format(point.value)}</td>
-                        <td className="px-4 py-2.5 text-right text-[var(--dashboard-text-muted)]">{format(point.previous)}</td>
-                        <td className={cn('px-4 py-2.5 text-right font-medium', VERDICT_TEXT[theme][verdict])}>
-                          <span aria-hidden="true" className="mr-1 text-[9px]">
-                            {DIRECTION_GLYPHS[direction]}
-                          </span>
-                          {formatChange(change)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
+        <MetricDetailBody detail={data} definition={definition} loading={loading} />
       ) : !error ? (
         <div className="mt-8" aria-busy="true">
           <div className="h-12 w-56 animate-pulse rounded-[12px] bg-[var(--dashboard-fill-strong)]" />
@@ -228,5 +134,117 @@ export function MetricDetailScreen({ metric }: { metric: MetricKey }) {
         </div>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * The period's number, its chart, and every bucket in a table. Drawn only
+ * once an answer has arrived, so the bucket size and the currency are always
+ * the answer's own, never a placeholder standing in while it loads.
+ */
+function MetricDetailBody({
+  detail,
+  definition,
+  loading,
+}: {
+  detail: MetricDetailDto;
+  definition: MetricDefinition;
+  loading: boolean;
+}) {
+  const theme = useDashboardTheme();
+  const { granularity } = detail;
+  const format = (value: number) => formatMetricValue(value, definition.unit, detail.currency);
+  const points: ChartPoint[] = detail.points.map((point) => ({
+    tick: formatTick(point, granularity),
+    label: formatBucket(point, granularity),
+    note: formatPartialNote(point, granularity),
+    partial: point.partial,
+    value: point.value,
+    previous: point.previous,
+  }));
+  const hasPartial = points.some((point) => point.partial);
+
+  return (
+    <div className={cn('transition-opacity duration-200', loading && 'opacity-60')} aria-busy={loading}>
+      <div className="mt-8 flex flex-wrap items-end gap-x-4 gap-y-2">
+        <p className="text-[48px] font-semibold leading-none tracking-[-0.03em]">{format(detail.value)}</p>
+        <DeltaPill change={detail.change} higherIsBetter={definition.higherIsBetter} tone={theme} className="mb-1.5" />
+      </div>
+      <p className="mt-2 text-[13px] text-[var(--dashboard-text-muted)]">
+        {definition.caption} · {formatPeriod(detail.period)} · {format(detail.previous)} in{' '}
+        {formatPeriod(detail.comparison)}
+      </p>
+
+      <div className={cn(theme === 'dark' ? darkCard : lightCard, 'mt-6 p-6')}>
+        <ChartLegend
+          color={CHART_BLUE[theme]}
+          labels={SERIES_LABELS}
+          tone={theme}
+          partialLabel={hasPartial ? `Partial ${granularity}` : undefined}
+        />
+        <div className="mt-3">
+          <LineChart
+            points={points}
+            height={360}
+            color={CHART_BLUE[theme]}
+            tone={theme}
+            formatValue={format}
+            formatAxis={(value) => formatMetricValue(value, definition.unit, detail.currency, { compact: true })}
+            ariaLabel={`${definition.label} by ${granularity}, ${formatPeriod(detail.period)}, against the comparison period`}
+            seriesLabels={SERIES_LABELS}
+          />
+        </div>
+      </div>
+
+      <div className="mt-6 overflow-hidden rounded-[16px] border border-[var(--dashboard-line)]">
+        <div className="max-h-[520px] overflow-auto">
+          <table className="w-full border-collapse text-[13px]">
+            <caption className="sr-only">
+              {definition.label} by {granularity}, newest first, with the comparison period
+            </caption>
+            <thead className="sticky top-0 z-10 bg-[var(--dashboard-table-head)] text-left text-[12px] font-semibold text-[var(--dashboard-text-muted)]">
+              <tr>
+                <th scope="col" className="px-4 py-2.5 font-semibold">
+                  {GRANULARITY_LABELS[granularity]}
+                </th>
+                <th scope="col" className="px-4 py-2.5 text-right font-semibold">
+                  {definition.label}
+                </th>
+                <th scope="col" className="px-4 py-2.5 text-right font-semibold">
+                  Comparison period
+                </th>
+                <th scope="col" className="px-4 py-2.5 text-right font-semibold">
+                  Change
+                </th>
+              </tr>
+            </thead>
+            <tbody className="tabular-nums">
+              {[...detail.points].reverse().map((point) => {
+                const change = changeBetween(point.value, point.previous);
+                const direction = directionOf(change);
+                const verdict = verdictOf(direction, definition.higherIsBetter);
+
+                return (
+                  <tr key={point.start} className="border-t border-[var(--dashboard-line)]">
+                    <th scope="row" className="px-4 py-2.5 text-left font-medium text-[var(--dashboard-text)]">
+                      {formatBucket(point, granularity)}
+                      {point.partial ? <span className="ml-2 text-[12px] font-normal text-[var(--dashboard-text-muted)]">partial</span> : null}
+                    </th>
+                    <td className="px-4 py-2.5 text-right text-[var(--dashboard-text)]">{format(point.value)}</td>
+                    <td className="px-4 py-2.5 text-right text-[var(--dashboard-text-muted)]">{format(point.previous)}</td>
+                    <td className={cn('px-4 py-2.5 text-right font-medium', VERDICT_TEXT[theme][verdict])}>
+                      <span aria-hidden="true" className="mr-1 text-[9px]">
+                        {DIRECTION_GLYPHS[direction]}
+                      </span>
+                      {formatChange(change)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   );
 }

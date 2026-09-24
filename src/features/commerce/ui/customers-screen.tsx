@@ -1,9 +1,8 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import type { Tone } from '@/components/charts/verdict';
 import { darkCard, lightCard } from '@/components/ui/surfaces';
-import { useDashboardTheme } from '@/hooks/use-dashboard-theme';
+import { useDashboardTheme, type DashboardTheme } from '@/hooks/use-dashboard-theme';
 import { useRemote } from '@/hooks/use-remote';
 import { cn } from '@/lib/utils';
 import { fetchCustomers } from '../api/client';
@@ -49,7 +48,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function CustomerCard({ customer, currency, now, tone }: { customer: Customer; currency: string; now: number; tone: Tone }) {
+function CustomerCard({ customer, currency, now, tone }: { customer: Customer; currency: string; now: number; tone: DashboardTheme }) {
   const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
   return (

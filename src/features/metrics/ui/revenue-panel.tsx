@@ -12,22 +12,12 @@ import type { OverviewDto } from '../api/schemas';
 import {
   REVENUE_KPI_DEFINITIONS,
   REVENUE_SOURCE_LABELS,
-  type KpiUnit,
   type RevenueKpi,
 } from '../domain/metrics';
-import { formatBucket, formatCount, formatMoney, formatPartialNote, formatPercent, formatPeriod, formatTick } from './format';
+import { formatBucket, formatKpi, formatMoney, formatPartialNote, formatPercent, formatPeriod, formatTick } from './format';
 import { CHART_BLUE, KPI_KEY, SOURCE_COLORS } from './styles';
 
 const SERIES_LABELS = { current: 'This period', previous: 'Comparison period' };
-
-function formatKpi(value: number | null, unit: KpiUnit, currency: string, compact = false): string {
-  if (value === null) return '—';
-  if (unit === 'currency') return formatMoney(value, currency, { compact });
-  if (unit === 'currency-cents') return formatMoney(value, currency, compact ? { compact } : { cents: true });
-  if (unit === 'percent') return formatPercent(value);
-
-  return formatCount(value, { compact });
-}
 
 /**
  * The wide panel under the tiles. Simpler than it was, and more capable

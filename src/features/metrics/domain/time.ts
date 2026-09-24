@@ -34,6 +34,9 @@ export interface Bucket extends TimeInterval {
 export const PRESETS = ['today', 'yesterday', '7d', '30d', '3m', '6m', '12m'] as const;
 export type Preset = (typeof PRESETS)[number];
 
+/** What a page opens on, and what the API reads when no range is given. */
+export const DEFAULT_PRESET: Preset = '30d';
+
 /** A preset, or two calendar days picked by hand (both included). */
 export type RangeSelection = { preset: Preset } | { from: IsoDate; to: IsoDate };
 
@@ -45,7 +48,9 @@ export const MAX_CUSTOM_DAYS = 731;
 
 const HOUR_MS = 3_600_000;
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
-const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:00:00Z$/;
+
+/** The form of an Instant; the wire schemas check it with this same pattern. */
+export const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:00:00Z$/;
 
 export function isPreset(value: string): value is Preset {
   return (PRESETS as readonly string[]).includes(value);

@@ -2,8 +2,7 @@
 
 import { CircleHelp } from 'lucide-react';
 import { useState } from 'react';
-import type { Tone } from '@/components/charts/verdict';
-import { useDashboardTheme } from '@/hooks/use-dashboard-theme';
+import { useDashboardTheme, type DashboardTheme } from '@/hooks/use-dashboard-theme';
 import { useRemote } from '@/hooks/use-remote';
 import { cn } from '@/lib/utils';
 import { fetchHealthReport } from '../api/client';
@@ -22,7 +21,7 @@ import { statusOfImpact, type IncidentPhase, type Status } from '../domain/syste
 
 const STATUS: Record<
   Status,
-  { label: string; headline: string; banner: string; bar: string; text: Record<Tone, string> }
+  { label: string; headline: string; banner: string; bar: string; text: Record<DashboardTheme, string> }
 > = {
   operational: {
     label: 'Operational',
@@ -82,7 +81,7 @@ type Day = HealthReportDto['components'][number]['days'][number];
  * step, stretched to the row. Each day is hovered through a full-step strip,
  * so the gaps between bars answer too.
  */
-function UptimeBars({ days, tone, label }: { days: readonly Day[]; tone: Tone; label: string }) {
+function UptimeBars({ days, tone, label }: { days: readonly Day[]; tone: DashboardTheme; label: string }) {
   const [active, setActive] = useState<number | null>(null);
   const hovered = active === null ? undefined : days[active];
   const width = days.length * 5 - 2;
@@ -156,7 +155,7 @@ function UptimeBars({ days, tone, label }: { days: readonly Day[]; tone: Tone; l
   );
 }
 
-function ComponentRow({ component, tone }: { component: HealthReportDto['components'][number]; tone: Tone }) {
+function ComponentRow({ component, tone }: { component: HealthReportDto['components'][number]; tone: DashboardTheme }) {
   const troubled = component.days.filter((day) => day.status !== 'operational').length;
 
   return (
@@ -189,7 +188,7 @@ function ComponentRow({ component, tone }: { component: HealthReportDto['compone
   );
 }
 
-function PastIncidents({ days, tone }: { days: HealthReportDto['pastIncidents']; tone: Tone }) {
+function PastIncidents({ days, tone }: { days: HealthReportDto['pastIncidents']; tone: DashboardTheme }) {
   return (
     <section aria-labelledby="past-incidents" className="mt-16">
       <h2 id="past-incidents" className="text-[28px] font-medium tracking-[-0.01em] text-[var(--dashboard-text)]">

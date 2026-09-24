@@ -2,8 +2,8 @@
 
 import { Check, Plus, X } from 'lucide-react';
 import { useEffect, useId, useState, type FormEvent } from 'react';
-import type { Tone } from '@/components/charts/verdict';
 import { brandButton } from '@/components/ui/surfaces';
+import type { DashboardTheme } from '@/hooks/use-dashboard-theme';
 import { cn } from '@/lib/utils';
 import {
   AGENT_MODEL_KEYS,
@@ -329,7 +329,7 @@ export function SectionEditor({ section, editor }: { section: AgentSection; edit
 }
 
 /** Rises from the foot of the page while there is something to save, and says so once it is saved. */
-export function SaveBar({ editor, tone }: { editor: AgentProfileEditor; tone: Tone }) {
+export function SaveBar({ editor, tone }: { editor: AgentProfileEditor; tone: DashboardTheme }) {
   const { dirty, problems, save, discard } = editor;
   const [justSaved, setJustSaved] = useState(false);
   const problem = problems.name ?? problems.rules ?? problems.culture;

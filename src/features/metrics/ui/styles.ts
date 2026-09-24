@@ -1,4 +1,4 @@
-import type { Tone } from '@/components/charts/verdict';
+import type { DashboardTheme } from '@/hooks/use-dashboard-theme';
 
 /**
  * The Store Events Panel's own surfaces, per theme; the shared ones -- the
@@ -7,13 +7,13 @@ import type { Tone } from '@/components/charts/verdict';
  */
 
 /** The charts' line: 5.0:1 on the dark card, 5.4:1 on white. */
-export const CHART_BLUE: Record<Tone, string> = {
+export const CHART_BLUE: Record<DashboardTheme, string> = {
   dark: '#4f7dff',
   light: '#4359ef',
 };
 
 /** The revenue sources, one hue in steps of lightness, per theme. */
-export const SOURCE_COLORS: Record<Tone, readonly string[]> = {
+export const SOURCE_COLORS: Record<DashboardTheme, readonly string[]> = {
   dark: ['#4f7dff', '#7b9cff', '#a7bdff', '#d3deff'],
   light: ['#4359ef', '#6f80f3', '#9ba7f7', '#c7cefb'],
 };
@@ -23,7 +23,7 @@ export const SOURCE_COLORS: Record<Tone, readonly string[]> = {
  * above in the chart blue, in the rail's active-key idiom. It replaced a
  * 2px accent line along the cell's top (owner's direction, 23 Sep 2026).
  */
-export const KPI_KEY: Record<Tone, string> = {
+export const KPI_KEY: Record<DashboardTheme, string> = {
   dark:
     'border border-transparent ' +
     '[background:radial-gradient(120%_90%_at_50%_0%,rgba(79,125,255,0.18),transparent_62%)_padding-box,linear-gradient(180deg,#2b2b30,#1d1d21)_padding-box,linear-gradient(180deg,rgba(255,255,255,0.16),rgba(255,255,255,0.03))_border-box] ' +

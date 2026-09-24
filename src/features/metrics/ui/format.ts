@@ -1,5 +1,16 @@
-import type { MetricUnit } from '../domain/metrics';
-import { hourNumber, instantAt, type Bucket, type Granularity, type IsoDate, type TimeInterval } from '../domain/time';
+import type { KpiUnit, MetricUnit } from '../domain/metrics';
+import {
+  dateOf,
+  hourNumber,
+  hoursIn,
+  instantAt,
+  lastDateOf,
+  startOfDay,
+  type Bucket,
+  type Granularity,
+  type IsoDate,
+  type TimeInterval,
+} from '../domain/time';
 
 /**
  * Numbers and times as the panel writes them. English, like the rest of the
@@ -66,6 +77,16 @@ export function formatPercent(ratio: number): string {
   return percents.format(ratio);
 }
 
+/** A revenue figure in its own unit; a ratio with nothing to divide by is a dash. */
+export function formatKpi(value: number | null, unit: KpiUnit, currency: string, compact = false): string {
+  if (value === null) return '—';
+  if (unit === 'currency') return formatMoney(value, currency, { compact });
+  if (unit === 'currency-cents') return formatMoney(value, currency, compact ? { compact } : { cents: true });
+  if (unit === 'percent') return formatPercent(value);
+
+  return formatCount(value, { compact });
+}
+
 const dayFormat = new Intl.DateTimeFormat(LOCALE, { month: 'short', day: 'numeric', timeZone: 'UTC' });
 const dayYearFormat = new Intl.DateTimeFormat(LOCALE, {
   month: 'short',
@@ -91,8 +112,8 @@ function lastHourOf(interval: TimeInterval): Date {
 
 /** "Aug 24 – Sep 22, 2026"; the year is written once when both ends share it. */
 export function formatDays(from: IsoDate, to: IsoDate): string {
-  const start = toDate(`${from}T00:00:00Z`);
-  const end = toDate(`${to}T00:00:00Z`);
+  const start = toDate(startOfDay(from));
+  const end = toDate(startOfDay(to));
 
   return from === to ? dayYearFormat.format(start) : dayYearFormat.formatRange(start, end);
 }
@@ -103,13 +124,12 @@ export function formatDays(from: IsoDate, to: IsoDate): string {
  */
 export function formatPeriod(interval: TimeInterval): string {
   const start = toDate(interval.start);
-  const last = lastHourOf(interval);
 
-  if (hourNumber(interval.end) - hourNumber(interval.start) < 24) {
+  if (hoursIn(interval) < 24) {
     return `${dayYearFormat.format(start)}, ${hourFormat.format(start)}–${hourFormat.format(toDate(interval.end))} UTC`;
   }
 
-  return formatDays(interval.start.slice(0, 10), last.toISOString().slice(0, 10));
+  return formatDays(dateOf(interval.start), lastDateOf(interval));
 }
 
 /** A bucket as a heading: an hour, a day, a week's span, or a month (its span when clipped). */

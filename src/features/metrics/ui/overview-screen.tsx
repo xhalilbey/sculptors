@@ -6,6 +6,7 @@ import { darkCard, lightCard } from '@/components/ui/surfaces';
 import { useDashboardTheme } from '@/hooks/use-dashboard-theme';
 import { cn } from '@/lib/utils';
 import { selectionQuery } from '../api/client';
+import { METRIC_KEYS } from '../domain/metrics';
 import type { RangeSelection } from '../domain/time';
 import { formatBucket } from './format';
 import { MetricTile } from './metric-tile';
@@ -16,8 +17,8 @@ import { useOverview } from './use-metrics';
 
 /**
  * The Store Events Panel (the rail's Overview): what the agents did for the
- * store over a range -- nine tiles, each opening its own chart, and revenue
- * across the full width under them.
+ * store over a range -- a tile per metric, each opening its own chart, and
+ * revenue across the full width under them.
  *
  * The heading is only its name, with the range bar under it (owner's
  * direction, 23 Sep 2026). The range lives in the URL, so a view can be
@@ -80,7 +81,7 @@ export function OverviewScreen() {
       ) : !error ? (
         <div className="mt-6" aria-busy="true">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {Array.from({ length: 9 }, (_, index) => (
+            {Array.from({ length: METRIC_KEYS.length }, (_, index) => (
               <div key={index} className={cn(card, 'min-h-[236px] animate-pulse')} />
             ))}
           </div>
