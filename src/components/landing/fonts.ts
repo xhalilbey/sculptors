@@ -1,4 +1,4 @@
-import { Bitcount_Grid_Single, Figtree } from 'next/font/google';
+import { Bitcount_Grid_Single, Figtree, Red_Hat_Display } from 'next/font/google';
 
 /*
  * The landing page's two faces (owner's direction, 24 Sep 2026: "improve the
@@ -33,4 +33,16 @@ export const landingPixel = Bitcount_Grid_Single({
   // next/font has no metrics for this face to size a fallback with, and
   // warns on every compile without this; the fallback is a system mono.
   adjustFontFallback: false,
+});
+
+/*
+ * The hero's headline face (owner's direction, 24 Sep 2026: the hero text
+ * "like Groq Platform"): Groq's display cut is geometric -- circular o's, a
+ * G with a long bar, a round-shouldered r. Red Hat Display was the nearest
+ * open face in a side-by-side of nine.
+ */
+export const landingDisplay = Red_Hat_Display({
+  subsets: ['latin', 'latin-ext'],
+  variable: '--font-lp-display',
+  display: 'swap',
 });
