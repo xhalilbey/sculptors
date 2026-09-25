@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { defineRoute } from '@/lib/api/define-route';
 import { logger } from '@/lib/logger';
-import { organizationIdSchema } from '@/lib/validations';
+import { organizationIdSchema, organizationNameSchema } from '@/lib/validations';
 import { toOrganizationDto } from '@/lib/workos/dto';
 import { isOwnerInWorkOS, updateOrganization } from '@/lib/workos/organizations';
 
@@ -25,12 +25,7 @@ const params = z.object({ id: organizationIdSchema });
 
 // Strict: a field this route does not know is a 400, not silently dropped.
 const body = z.strictObject({
-  name: z
-    .string()
-    .trim()
-    .min(1, 'Organization name must be between 1 and 100 characters')
-    .max(100, 'Organization name must be between 1 and 100 characters')
-    .optional(),
+  name: organizationNameSchema.optional(),
   completeOnboarding: z.boolean().optional(),
 });
 

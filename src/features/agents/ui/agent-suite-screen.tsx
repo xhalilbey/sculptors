@@ -2,9 +2,8 @@
 
 import { ArrowUpRight } from 'lucide-react';
 import Link from 'next/link';
-import type { Tone } from '@/components/charts/verdict';
 import { BAND_CAPTION, BLUE_BAND, darkCard, lightCard } from '@/components/ui/surfaces';
-import { useDashboardTheme } from '@/hooks/use-dashboard-theme';
+import { useDashboardTheme, type DashboardTheme } from '@/hooks/use-dashboard-theme';
 import { cn } from '@/lib/utils';
 import {
   AGENT_MODELS,
@@ -107,7 +106,7 @@ function headline(section: AgentSection, profile: AgentProfile): { value: string
   }
 }
 
-function AgentCard({ section, profile, tone }: { section: AgentSection; profile: AgentProfile; tone: Tone }) {
+function AgentCard({ section, profile, tone }: { section: AgentSection; profile: AgentProfile; tone: DashboardTheme }) {
   const info = AGENT_SECTION_INFO[section];
   const { value, caption } = headline(section, profile);
 

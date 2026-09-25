@@ -146,6 +146,10 @@ middleware code this phase kept frozen:
   `import 'server-only'`, and the ESLint zone fences only `supabase/server.ts`.
   `workos/auth.ts` imports the service-role client, so add `server-only` to
   all three and put `./src/lib/workos` in the zone.
+  *(Done 24 Sep 2026: server-only is in both files and lib/workos is fenced
+  from components, hooks, contexts, providers and slice ui/ by a
+  resolved-path zone; see "Slice layers are checked on resolved paths; UI
+  never reaches lib/workos".)*
 - The middleware matcher skips every path ending in an image extension,
   `/api/**` included (for example `PATCH /api/organizations/x.png`). The route
   still checks origin and session itself, but it skips the rate limit. Keep
@@ -156,6 +160,9 @@ middleware code this phase kept frozen:
   `/api/auth/`. The limiter is also per instance, in memory. Its unused
   `SIGNUP`/`FORGOT_PASSWORD`/`VERIFY_EMAIL` budgets were deleted with the
   other dead exports; set the budgets when the routes are wired.
+  *(Done 24 Sep 2026 for a per-address budget; see "Sign-in submissions are
+  throttled, page views are not". Still in memory and per instance;
+  per-email keys wait for a shared store.)*
 - There is no page that completes a WorkOS password reset.
   `POST /api/auth/workos/password-reset` still has WorkOS send the email, but
   the deleted `/auth/reset-password` page was Supabase-only (it waited for a
@@ -272,6 +279,8 @@ a role the database actually constrains.
   app role's grants are exactly `SELECT/INSERT/UPDATE/DELETE`, default
   privileges from `neondb_owner` give later tables the same, and the role
   has `USAGE` without `CREATE` on `public` and nothing on `drizzle`.
+  *(Superseded 2026-09-24 by "The app role cannot delete identity rows",
+  below: the identity tables no longer grant DELETE.)*
 - A WorkOS webhook whose apply step fails is answered 500, and WorkOS's
   retry is then acknowledged as a duplicate without being applied (the
   event id was recorded first). The failure is kept in
@@ -823,6 +832,615 @@ The owner asked for better type, like Groq's, and singled out Groq's nav
   as Groq's are; the hero's tracking opened from -0.06em to -0.045em.
 - **Not done here**: the app itself (dashboard, auth) still falls through
   to the system font for the same reason.
+
+## 2026-09-24 — Production logs are written by level, and the build keeps them
+
+**Decision.** `next.config.ts` no longer sets `compiler.removeConsole`. The
+logger's production branch (`src/lib/logger.ts`) writes one JSON object per
+line through the console method of its level: errors through
+`console.error` and warnings through `console.warn` (stderr), info through
+`console.log` (stdout). Each line carries `severity` (`DEBUG`, `INFO`,
+`WARNING`, `ERROR`, the names Cloud Logging reads) beside the old `level`,
+and the logger's own keys (`timestamp`, `severity`, `level`, `message`)
+are written after the context, so a context key cannot forge them. In the
+browser bundle, production info and debug lines return early; errors and
+warnings reach the visitor's console.
+
+**Why.** removeConsole stripped every `console.log` from production builds
+except `error` and `warn`, and the logger wrote every level, errors
+included, with `console.log`. The built server chunk read
+`if(this.isProduction)({timestamp:...,...r});else{...}`: the call was gone,
+so route 500s, webhook apply failures, access denials and sign-in failures
+logged nothing in production. The unit tests could not see it, because
+Vitest never runs Next's compiler. The lint rule `no-console` (allowing
+only `warn` and `error`, under `--max-warnings 0`) already keeps stray
+`console.log` out of the source, so the build transform guarded nothing the
+linter does not. Rejected: keeping removeConsole and widening its `exclude`
+to `log` (or `info`), which leaves a setting whose only effect is a trap
+for the next person who routes a line through another method; and
+`process.stdout.write`, which does not exist in the browser bundle.
+
+**Consequence.** Server logs appear in production for the first time, so
+redaction now matters (the camelCase keys are a separate fix).
+`src/next-config.test.ts` fails if removeConsole comes back, and
+`logger.test.ts` pins the method and severity per level. The browser was
+silent before; its console now shows sanitized errors and warnings, on
+purpose, while info lines (user and organization ids from the auth and
+organization contexts) stay out of it. `define-route.ts` logs a 4xx
+AppError's text under `reason`, since a context `message` no longer
+replaces the line's own. *(24 Sep, later: the webhook and the AuthKit
+callback answer anyone and sit outside every budget, so each forged
+request now writes a line: a warning for a bad webhook signature or body,
+or a callback carrying an error or a state that does not match its
+cookie, and an error, after a WorkOS code exchange, for a callback whose
+caller set the state cookie itself. Left as it is. Cloud Run's request log
+already writes one entry per request, at WARNING for a 4xx, so these lines
+add a constant factor. A per-address budget on the webhook would answer
+WorkOS's retries, which come from shared addresses, with 429s and lose
+events.)*
+
+## 2026-09-24 — Runtime dependencies are audited in CI
+
+**Decision.** Next moves from 16.0.10 to 16.3.6 (`^16.3.6`), which brings
+sharp 0.35.4 and Next's own postcss 8.5.23. `npm audit fix`, without
+`--force`, lifts nanoid to 3.3.19 and a set of lint and build tools, and
+vitest moves to 4.1.11. CI runs `npm audit --omit=dev --audit-level=high`
+straight after `npm ci`. `next.config.ts` sets `agentRules: false`.
+
+**Why.** On 24 Sep `npm audit --omit=dev` rated next 16.0.10 critical and
+its nested postcss, sharp 0.34.4 and nanoid 3.3.17 high, all of them in
+what the Docker image ships. The Dockerfile's `npm ci` would have
+shipped them on the first deploy, and nothing in CI looked. Most of Next's
+advisories do not reach this app (no `remotePatterns`, no Server Actions,
+and a middleware that only checks the cookie is present, by design), but
+GHSA-mg66, the Cache Components connection-exhaustion DoS, is scoped to
+`cacheComponents: true`, which is ours, and the upgrade is a minor inside
+the caret range. *(24 Sep, later: the middleware does more than check the
+cookie. It runs the API budget, and since "Sign-in submissions are
+throttled, page views are not" it holds the only sign-in throttle, counted
+after its own same-origin check. An advisory that bypasses the middleware
+matters to this app again: the routes still refuse a foreign origin and
+check the session themselves, but sign-in would go unthrottled.)*
+The gate omits dev dependencies so an advisory in a build or test
+tool, which never reaches the image, does not fail every push, and
+it stops at high so a moderate does not either. Rejected: `npm audit
+fix --force`, which would take drizzle-kit back to 0.18 and break
+`db:generate`; and Dependabot, which opens pull requests on its own
+and is the owner's call. eslint-config-next stays at 16.0.10: 16.3 adds
+`@next/next/no-location-assign-relative-destination`, which warns on the
+four deliberate document navigations to route handlers (`/api/auth/logout`
+in `auth-context.tsx` and `settings-screen.tsx`, `/api/auth/workos/login`
+on the login page). *(24 Sep, later: two remain, the `location.assign`
+in `auth-context.tsx`'s signOut and the login page's `location.href`.
+`settings-screen.tsx` now calls signOut, and the rule does not flag the
+two `location.replace` calls in `auth-context.tsx`. Two warnings still
+fail `--max-warnings 0`, so the reason holds.)* Its remedy, `router.push`,
+first fetches the target as an RSC request; the logout GET refuses any
+`Sec-Fetch-Mode` but `navigate`, and the login route redirects to WorkOS,
+so these stay document navigations. A disable comment, or an absolute
+URL that hides the string from the rule, would be an escape hatch. It is
+a dev dependency and in no advisory. Since 16.3, `next dev` also writes
+AGENTS.md and a CLAUDE.md that loads it whenever it detects an AI coding
+agent. Rejected: committing them, which would let a dependency author the
+instructions every agent session reads.
+
+**Consequence.** A new high or critical advisory in a runtime dependency
+fails CI until it is upgraded; accepting one instead is an entry here and a
+matching change to the gate. Dev-tool advisories are reviewed by hand, and
+drizzle-kit's moderate esbuild advisory (through `@esbuild-kit`, its dev
+server only) is accepted until drizzle-kit drops that package. `next dev`
+now prints an instant-navigation notice for `/dashboard`, whose page
+renders behind the client-side auth gate; the production build is
+unchanged. npm 10 can no longer resolve a vitest upgrade by itself (its
+peer resolver fails on vite's optional `@vitejs/devtools` peer, which
+names `vitest@*`); the 4.1.11 entries came from npm 11's resolution and
+were checked with npm 10's `npm ci`.
+
+## 2026-09-24 — The client address is the rightmost forwarded hop, everywhere
+
+**Decision.** `src/lib/security/client-ip.ts` exports `clientIpFrom(headers)`:
+the rightmost non-empty `X-Forwarded-For` entry, else a non-empty
+`X-Real-IP`, else null. The rate limiter's `getIdentifier` keys on it
+(`ip:<address>`, or one shared `ip:unknown` bucket), and
+`signInContextFrom` sends it to WorkOS as `ipAddress`, which is left out
+when it is null. It trusts exactly one hop: Cloud Run, reached directly.
+
+**Why.** There were two parsers with opposite trust rules. The limiter read
+the rightmost entry, the one our edge appends; sign-in sent WorkOS the
+leftmost, the one the caller writes, so the address WorkOS records and
+checks at sign-in was whatever the caller chose. One helper keeps the two
+from drifting apart again. The limiter's `request.ip` branch could never
+run (Next 15 removed `NextRequest.ip`), and its last fallback keyed on the
+`sub` of a Bearer token it decoded without verifying, a bucket the caller
+names. Both are gone: a request without proxy headers lands in
+`ip:unknown`, as one without a token already did. Rejected: a configurable
+hop count now, with no deployment behind a second proxy to set it for; and
+keeping the leftmost entry for WorkOS as "the real client", which holds
+only while the client is honest.
+
+**Consequence.** Behind an external load balancer or any other extra
+proxy, the rightmost entry would be that proxy's address, for WorkOS and
+the limiter alike; the hop count changes when the deploy is wired, and is
+deferred until then. *(24 Sep, later: the README's Deploy section states
+the precondition, the app reached on Cloud Run directly, for whoever wires
+the deploy.)* `client-ip.test.ts` pins the rightmost-hop rule, and
+the password route test pins that WorkOS receives the appended address,
+not a forged prefix. Keys for real traffic through the middleware are
+unchanged.
+
+## 2026-09-24 — Sign-in submissions are throttled, page views are not
+
+**Decision.** `src/middleware.ts` puts
+`POST /api/auth/workos/{password,email-verification,password-reset}` on one
+budget, `RATE_LIMITS.AUTH_SUBMIT`: ten submissions per address per 15
+minutes, the three routes together (one constant key, `auth-submit`, on the
+`clientIpFrom` address). The eleventh is a 429 in the routes' own envelope,
+`{ success: false, error: 'Too many attempts. Please wait a few minutes and
+try again.' }`, with `Retry-After`. The path is matched after decoding:
+Next 16.3's production route matcher also sends
+`/api/auth/workos/%70assword` and `/api/auth/workos%2Fpassword` to the
+password handler, while the middleware sees them as sent. The `LOGIN`
+budget, five per 15 minutes on every `/auth/*` page view, is gone. The
+webhook, the login GET, the callback, `me` and logout stay outside the
+budget, and development still skips it. The two 429 answers share one
+builder, `tooManyRequests`. Only a post that would pass the routes' own
+`requireSameOrigin` is counted. A foreign or missing Origin spends nothing
+and is left to the route's 403. As first written, the budget was spent
+before that check, so any page the victim had open could send ten
+cross-site form posts and lock their address, and everyone behind the same
+NAT, out of sign-in for 15 minutes, without testing a credential.
+
+**Why.** "Carried into the Neon phase" deferred this until the routes were
+wired, and they are: the login page posts to all three, and nothing
+throttled them, since `LOGIN` matched only `/auth/` pages and `API_READ`
+skips `/api/auth/`. The page budget throttled nothing an attacker needs (a
+page view checks no credential) and turned a sixth load of the login page
+within 15 minutes into a 429. One bucket for the three routes means guesses
+cannot be spread across them. The body is JSON because the login page reads
+`response.json()` and toasts `error`. Rejected: a key per email (or per
+pending token) as well. It needs the parsed body, so it belongs in the
+routes, and with sign-in closed to a few allowlisted accounts a per-email
+lock would let anyone who knows an address lock its owner out; on
+per-instance counters it would not hold either. Rejected: a generous page
+budget, which would still protect nothing.
+
+**Consequence.** Users behind one NAT share ten attempts per 15 minutes.
+The counters are in memory and per instance, so on Cloud Run each instance
+keeps its own ten; a shared store (a Postgres table, or an edge rule in
+front of these three paths) is what would make the budget hold across
+instances, and what per-email keys wait for. `password-reset` still answers
+`{ success: true }` until the budget is spent, and the login page does not
+read that answer, so a throttled reset request shows the same neutral toast
+as any other. WorkOS's own limits still apply behind this one.
+`src/middleware.test.ts` pins the budget, the shared bucket, the key per
+address, the encoded path, the development exemption, and that pages, the
+webhook, the AuthKit round trip and foreign-origin posts spend none of it.
+
+## 2026-09-24 — Log out ends the session at WorkOS
+
+**Decision.** `GET` and `POST /api/auth/logout` revoke the WorkOS session
+before they sign the browser out. `endWorkOSSession` in
+`src/lib/workos/logout.ts` unseals the cookie locally
+(`userManagement.getSessionFromCookie`), reads the `sid` claim from the
+access token's payload without verifying the token, and calls
+`userManagement.revokeSession({ sessionId })`, waiting at most three
+seconds. Every failure (no cookie, a seal that does not open, a token
+without a `sid`, a WorkOS error, the timeout) is logged by its error type
+only and ends in the same answer as a success: the redirect to the app
+root, at the same URL and status as before, with `wos-session` and
+`wos-state` cleared through `lib/workos/cookies.ts`. The route's own copy
+of the cookie attributes is gone. Both guards are unchanged: GET only as a
+top-level navigation, POST only from our own origin, and neither refusal
+reads the cookie.
+
+**Why.** Logout cleared only the browser's cookie. WorkOS still held the
+session as live, so a copy of the cookie taken before logout (it lives up
+to 30 days) went on refreshing from anywhere. The session id is read
+without verifying the access token because the seal is authenticated with
+our cookie password, so what it holds is what WorkOS gave us, and an
+expired access token still names its session; expired is the usual state
+when logout follows a 401 from `/api/auth/me`. The SDK's
+`CookieSession.authenticate` and `getLogoutUrl` refuse an expired token and
+would skip exactly that case. Rejected: redirecting through WorkOS's hosted
+logout URL (`userManagement.getLogoutUrl({ sessionId, returnTo })`). It
+would end the session too and also clear AuthKit's own cookie in the
+browser, which a server-to-server revocation cannot touch, but WorkOS
+honours `returnTo` only when it is registered as a sign-out redirect in
+that environment's dashboard. That cannot be checked from the code, and
+without it every logout would land on a WorkOS error page. Rejected:
+waiting on WorkOS without a bound, or failing the logout when it errors;
+an outage must never keep someone signed in to the browser they are
+leaving.
+
+**Consequence.** A copied cookie can no longer be refreshed after logout.
+The access token already inside it still authenticates until it expires
+(WorkOS's access-token lifetime, minutes), because `resolveSession`
+verifies that token locally. Logout makes one WorkOS call before the
+redirect, three seconds at the worst. When two tabs log out at once (the
+cross-tab broadcast in `auth-context.tsx`), the second may find the
+session already revoked; that is a logged warning and nothing more.
+Owner, to end AuthKit's browser session as well: register
+`<NEXT_PUBLIC_APP_URL>/` as a sign-out redirect in every WorkOS
+environment; then the redirect can go through `getLogoutUrl` with that
+`returnTo`, a code change kept for then. `logout/route.test.ts` pins both
+guards, the revocation, the expired token, each failure path, the
+three-second bound and the Set-Cookie attributes production sends.
+
+## 2026-09-24 — A membership is keyed by organization and user
+
+**Decision.** `membershipsRepository.upsertMany` upserts on the pair
+(`organization_id`, `user_id`), the existing
+`organization_memberships_org_user_key`, instead of on the WorkOS
+membership id. On a conflict the row takes the proposed id, WorkOS user
+id, role, status and `workos_updated_at`, under the same ordering rule as
+every mirror write: a proposal older than the stored state is ignored.
+The row keeps its `created_at`. No schema change and no migration.
+
+**Why.** WorkOS gives a member who is removed from an organization and
+added again a new `om_` id. Upserting by id inserted that membership as a
+second row for the same pair, which the unique constraint refused. The
+sign-in sync (`syncMembershipsForUser`) then failed on every attempt, so
+the user could no longer sign in, and the `organization_membership.created`
+webhook answered 500 on every WorkOS retry. With the pair as the key the
+new id takes the row over, because its `updatedAt` is later than the old
+membership's removal; a late event for the old id carries an older time
+and loses, whichever order the deliveries arrive in. Nothing references
+`organization_memberships.id`, so rewriting it is safe. Rejected: a
+partial unique index on the pair `where status = 'active'`, which would
+keep one row per WorkOS id. A 'created' for the new id delivered before
+the 'deleted' for the old one would find the old row still active and
+violate that index, the same failure in a different order. Rejected:
+deleting the old row before inserting the new one, which needs its own
+ordering check and loses the row the history is kept in.
+
+**Consequence.** One row per organization and user still records who was
+where; the ids of earlier memberships of the same pair are not kept.
+`retireStale` compares WorkOS's current ids, which a re-keyed row carries,
+so the sync does not retire it. Two memberships for one pair in a single
+upsert would fail, but WorkOS never lists two for one pair.
+`memberships.repository.db.test.ts`, `organizations.db.test.ts` and the
+webhook seam test pin the re-added member through the repository, the
+sign-in sync and signed webhooks, and that the late event for the old id
+changes nothing.
+
+## 2026-09-24 — The Origin header decides, and production never guesses the app URL
+
+**Decision.** `requireSameOrigin` in `src/lib/security/request-guards.ts`
+decides on the Origin header alone whenever one is sent, the literal `null`
+and an empty value included. It reads the Referer only when there is no
+Origin at all, and refuses a request with neither. It compares the full
+origin (scheme, host and port) with the origin of the configured app URL.
+Outside production, loopback hosts (`localhost`, `127.0.0.1`, `[::1]`) pass
+on any port; in production they never do. Every refusal is the same 403,
+`{ error: 'Invalid or missing origin' }`. The app URL comes from one
+accessor, `appUrl()` in `src/lib/app-url.ts`, which `getWorkOSEnv` uses
+too: `NEXT_PUBLIC_APP_URL` when it is set; in production, an error when it
+is not; elsewhere `http://localhost:3002`, the port `npm run dev` serves on.
+It reads the variable on every call, never at module load. When production
+has no usable app URL, the guard logs `NEXT_PUBLIC_APP_URL is not set or not
+a URL; refusing state-changing requests` and refuses.
+
+**Why.** An Origin of `null` fell through to the Referer, so a request the
+browser marked as coming from an opaque origin (a sandboxed frame, a
+`data:` page, a cross-origin redirect) was judged by the page address it
+also sent. Only hosts were compared, so `http://` passed for an `https://`
+app. The `http://localhost:3000` fallback was written twice, in the guard
+and in the WorkOS client, with a port the dev server does not use, and in
+production it put back the localhost origin the guard's own comment said
+was gone: a deployment without the variable admitted `localhost:3000` as
+same-origin and sent sign-in redirects there. The allowlist was built at
+import, so no test could reach its production branch, and none was
+written. Rejected: letting `Sec-Fetch-Site: same-origin` decide. Browsers
+send Origin on every POST, and older browsers and non-browser clients do
+not send `Sec-Fetch-*`, so it could only ever be a second signal. Rejected:
+failing at module load or in `next build`. The Docker build has no
+`NEXT_PUBLIC_APP_URL` (`.env*` is not copied into the image), and CI builds
+with a placeholder on purpose.
+
+**Consequence.** Production must set `NEXT_PUBLIC_APP_URL` (README,
+`.env.example`). Without it, every state-changing request is refused with
+a logged reason, and everything that calls `getWorkOSEnv` (the session
+check, sign-in, the callback, logout) fails with the configuration error
+instead of redirecting to localhost. The WorkOS client is built from the
+credentials alone and never reads the app URL, so the webhook, which the
+guard does not cover, keeps verifying and applying deliveries. As first
+written the client was built through `getWorkOSEnv` as well, so the error
+reached the webhook's signature check: every delivery was answered 401,
+logged as a rejected signature and retried by WorkOS, and the guard's
+line saying why was never written. Before, the posts were refused
+silently and the redirects went to `localhost:3000`, so such a deployment
+was already broken, only less visibly. Next.js inlines a `NEXT_PUBLIC_*`
+value only when the build has it set. The Docker build does not (the
+Dockerfile declares no `ARG`, and `.env*` is not copied), so the image
+reads `NEXT_PUBLIC_APP_URL` from the Cloud Run service's environment on
+each call, and a new revision picks up a change without a rebuild; a build
+that has it set (CI's placeholder, a local build) fixes that value in its
+bundles. As first written this entry said the admitted origin was fixed
+per image, which holds only for such a build. Deferred: a server-only
+`APP_URL`, which Next.js never inlines; moving to it changes the README
+contract and the CI build env, and waits for the deploy to be wired.
+`request-guards.test.ts` pins the Origin-first
+rule, the full-origin comparison, loopback on any port outside production
+and never in it, and the logged refusal when production has no app URL.
+`app-url.test.ts` pins the production error and the 3002 fallback, and
+`src/lib/workos/client.test.ts` pins the callback default on port 3002, the
+production error from `getWorkOSEnv` and a client that still builds without
+the app URL.
+
+## 2026-09-24 — The app role cannot delete identity rows
+
+**Decision.** Migration `0007_app_role_keeps_identity_rows` revokes DELETE
+on `users`, `organizations`, `organization_memberships` and
+`workos_webhook_events` from `sculptors_app`, which keeps SELECT, INSERT
+and UPDATE there. The default privileges from `0002` are unchanged, so a
+table a later migration creates still gives the app role SELECT, INSERT,
+UPDATE and DELETE, and never TRUNCATE or MAINTAIN. Tenant views must be
+created `with (security_invoker = true)`, and there are no materialized
+views over tenant data. `src/db/schema.db.test.ts` pins all of it: the
+exact privileges on each identity table and on a table created later,
+checked against every table privilege Postgres 18 has, that the
+app role owns no table in `public`, that it cannot delete an
+organization, that RLS is enabled on partitioned tables too, that
+`public` holds no materialized view and that every view there runs as its
+caller. `src/lib/identity/repositories/app-role.db.test.ts` runs every
+exported repository function once as `sculptors_app` and reads the write
+back. `db/bootstrap-roles.sql` no longer takes the password on psql's
+command line: the operator writes a hex secret to an owner-only file
+outside the checkout and sets it with psql's `\password`.
+
+**Why.** The app never deletes an identity row: a user WorkOS deleted is
+marked inactive, an organization is marked deleted, a membership WorkOS no
+longer lists is retired, and webhook events are the log. Yet `0002`
+granted DELETE on every table, and a DELETE on `organizations` cascades
+(ON DELETE CASCADE) into its memberships and, once they exist, into the
+tenant tables keyed to it, where the cascade runs past row level
+security. No test looked at privileges, so a TRUNCATE grant, which skips
+RLS altogether, would have passed every test, and so would MAINTAIN (new
+in Postgres 17), which lets its holder LOCK a table in ACCESS EXCLUSIVE
+mode, VACUUM, REINDEX or CLUSTER it. The privilege check first written
+for this entry left MAINTAIN out, so a later grant of it would still have
+passed. A view reads its tables as
+its owner, whom RLS does not bind, unless it is `security_invoker`; a
+materialized view is a copy taken by its owner that no policy can
+protect. The default privileges would make either readable by the app
+role, and the schema tests only looked at relkind `r`. Every repository
+test ran as the PGlite superuser, so no statement the app actually sends
+had met the grants or the policies. The old runbook put the password in
+the process list, never showed it to the operator, used base64 (whose
+`+`, `/` and `=` break a URL) and sent it in clear inside CREATE ROLE;
+`\password` hashes it as SCRAM on the client. Rejected: splitting
+`controlPlanePolicy` into per-command policies so RLS refuses deletes too.
+The revoke already refuses them before any policy is consulted, and the
+policy change would regenerate the identity schema for no further
+protection. Rejected: revoking DELETE in the default privileges as well,
+because tenant tables will need it.
+
+**Consequence.** A purge of identity rows, if one is ever needed, runs as
+the owner, like a migration. A repository function that deletes from an
+identity table fails as the app role; a new repository function gets its
+app-role run in `app-role.db.test.ts`. The production project's role already
+exists (created 23 Sep with the earlier runbook); the new steps apply to a
+new project, and `\password` alone rotates the password.
+
+## 2026-09-24 — Pages send a static security policy, without script-src
+
+**Decision.** Every path (`/:path*` in `next.config.ts` `headers()`) now
+sends three more headers: `Content-Security-Policy: frame-ancestors 'self';
+base-uri 'self'; object-src 'none'; form-action 'self'`,
+`Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(),
+usb=()` and `Cross-Origin-Opener-Policy: same-origin`. Every header that
+was already sent stays, `X-Frame-Options: SAMEORIGIN` included for
+browsers that predate `frame-ancestors`. `/_next/image` keeps its own
+sandboxed policy (`images.contentSecurityPolicy`): the optimizer sets it on
+its response after the config headers, so it replaces the page policy
+there, which a production build confirmed. The comments in
+`sidebar.tsx` and `landing/fonts.ts` that spoke of a CSP `img-src` and a
+`font-src 'self'` policy as if they existed now say that neither is set
+yet.
+
+**Why.** No page sent a CSP, a Permissions-Policy or COOP, and two
+comments claimed a policy that was not there. These directives cannot
+change what a page renders or loads, so they fit the static landing and
+the `cacheComponents` shells as they are. `form-action 'self'` was checked
+against every form: each one submits through a JS `onSubmit` that calls
+`preventDefault`, no `<form>` has an `action`, the WorkOS sign-in hop is a
+`window.location` navigation, and logout is reached by navigation, not a
+form post, and redirects to this origin. No flow uses `window.opener`:
+sign-in is a top-level redirect, not a popup, and external links carry
+`rel="noopener noreferrer"`. No page uses the camera, microphone, location,
+payments or USB. Rejected: a nonce-based `script-src`. A per-request nonce
+forces every page to render dynamically, which `cacheComponents` and the
+static landing rule out. Rejected for now: a static `script-src`,
+`style-src` and `img-src`. Next streams its RSC payload in inline scripts
+and the pages use inline `style` attributes, so both would need
+`'unsafe-inline'` and protect little, and `img-src` would have to list
+every avatar host (Google, GitHub, WorkOS), since avatars load straight
+from the provider.
+
+**Consequence.** Other sites cannot frame the app, inject a `<base>`,
+embed plugins or post a form of ours elsewhere, and a cross-origin page
+that opens the app, or that the app opens, gets no handle on its window
+(`window.opener` is severed both ways). Script injection
+is not yet contained by CSP. The next step is `script-src` with hashes
+(Next's `experimental.sri`), which needs no nonce; an `img-src` that
+lists the avatar hosts belongs with it, and an avatar on a host it does
+not list falls back to the initial through `onFailed`. A cross-origin
+form post or a popup sign-in flow would need this policy changed first.
+`src/next-config.test.ts` pins the three values and `X-Frame-Options`.
+A production build was checked in Chromium: the landing (fonts, hero
+images, the theme switch) and `/auth/login` report no policy violation,
+and `/_next/image` still serves under its own policy.
+
+## 2026-09-24 — Webhook events keep ids and times; deleted users keep no profile
+
+**Decision.** `recordWebhookEvent` (`src/lib/workos/webhook-sync.ts`) now
+stores in `workos_webhook_events.payload` only the string values of
+`object`, `id`, `organizationId`, `userId`, `status`, `createdAt` and
+`updatedAt` from the event's data, plus a membership's `role` as its slug.
+It is an allowlist, so an email, a name, a profile picture, metadata, an
+IP address, a user agent, an impersonator, a one-time code or token, an
+organization's name and any key a later SDK adds are never stored. On
+`user.deleted`, `deactivateByWorkOSUserId` in `users.repository.ts` also
+scrubs the user's row: `email` becomes `<WorkOS user id>@deleted.invalid`
+(the column is NOT NULL and not unique; `.invalid` is reserved by RFC 2606
+and reaches no mailbox), and `first_name`, `last_name` and `avatar_url`
+become null. The row, its `id`, its `workos_user_id` and the 'inactive'
+status stay, under the same `workos_updated_at` guard as before. No schema
+change and no migration.
+
+**Why.** The record step stored `{ ...event.data }` for every event WorkOS
+sent, with no end date: the emails, names, pictures, IP addresses and user
+agents of users the mirror never holds as well, since apply ignores a user
+it has not seen. Nothing reads that copy back. A redelivery is applied
+again from the event WorkOS sends, and the id alone is the idempotency
+guard. A user WorkOS deleted also kept their email and names in `users`
+for good. Rejected: a denylist of profile keys, because every new event
+type or SDK field would then be stored by default. Rejected for now: a
+retention job that empties old payloads and deletes processed rows once
+WorkOS's redelivery horizon has passed. It needs the owner's retention
+period and a scheduler the app does not have, and the event id has to
+outlive WorkOS's redeliveries, since it is what marks a replay as a
+duplicate. Rejected:
+deleting the user row, because memberships and organizations reference it,
+the app role cannot delete identity rows (`0007`), and the WorkOS id must
+stay to order late events.
+
+**Consequence.** A new row says which object an event touched and when,
+not what it said; the full event is WorkOS's own record. Rows written
+before this change keep their full payloads, and users deleted before it
+keep their profile, until an owner-run cleanup or the retention job
+clears them. A late `user.updated` from before a deletion loses on
+`workos_updated_at` and cannot write the profile back, and a deleted
+WorkOS user cannot sign in (WorkOS refuses them and the row is
+'inactive'). `webhook-sync.db.test.ts` pins the stored shape for a user,
+a membership and a session event, the scrub and the late update; the
+webhook seam test pins the shape as the real SDK deserializes it;
+`users.repository.db.test.ts` pins the scrub and its ordering guard.
+
+## 2026-09-24 — defineRoute answers are not stored
+
+**Decision.** The exit that both `defineRoute` and `definePublicRoute`
+share (`finish()` in `src/lib/api/define-route.ts`) now sets
+`Cache-Control: private, no-store` on every answer that has no
+Cache-Control of its own, and on every answer that carries the
+`wos-session` cookie whatever the handler set. The seven handlers that
+wrote `no-store` by hand (metrics, one metric, orders, customers,
+products, health and the organization list) no longer do, and return
+plain objects instead. The middleware's 401 for an API call without a
+session cookie and its 429s now say `no-store` too.
+`/api/auth/me` keeps its own `NO_STORE`, because no wrapper serves it.
+
+**Why.** No-store was each handler's job, and only the handlers that
+answer with data did it. Every answer the wrapper built itself (a 401,
+a 403, a 404, a 400 with field errors, a 500) and every handler that
+returned a plain object went out with no cache directive, and `finish()`
+stores a re-issued session cookie on all of them, refusals and errors
+included, so a spent refresh token is never replayed. A shared cache
+that kept one of those answers would hand the Set-Cookie to the next
+caller. `no-store` alone already forbids storing anywhere; `private`
+adds that the answer belongs to one user, for a shared cache or CDN rule
+that overrides `no-store`. Rejected: keeping the header per handler and
+adding it to the wrapper's own refusals only, because a new handler that
+forgets it is the same hole again. Rejected: always overwriting the
+handler's value, because a later public, cacheable answer (a static
+list, say) should be able to ask for it; the one case that is never
+allowed is a cacheable answer that sets the session cookie.
+
+**Consequence.** The route convention "data responses carry
+`Cache-Control: no-store`" is now the wrapper's, and a handler writes
+Cache-Control only to ask for something else. The header value on the
+data routes changes from `no-store` to `private, no-store`, which a
+browser treats the same. `define-route.test.ts` pins the
+header on a plain answer, a 401, a cross-origin 403 and a public route,
+a handler's own value kept, and that value replaced when the answer
+carries the session cookie; the route tests pin it on the data and
+organization routes, and `middleware.test.ts` on the 401 and the 429.
+
+## 2026-09-24 — Slice layers are checked on resolved paths; UI never reaches lib/workos
+
+**Decision.** Which sibling layer a feature slice's file may import is now
+an `import/no-restricted-paths` zone in `LOCKED_ZONES` (`eslint.config.mjs`):
+`domain/` imports none of `application/`, `infrastructure/`, `api/` or
+`ui/`, and `application/` and `infrastructure/` import neither `api/` nor
+`ui/`. A third new zone keeps `components/`, `hooks/`, `contexts/`,
+`providers/` and every slice's `ui/` off `src/lib/workos`. The per-layer
+`@typescript-eslint/no-restricted-imports` blocks stay, for the packages a
+layer must not use (`next/*`, `react`). No source file had to change: lint
+was clean under the new zones on the first run.
+
+**Why.** The sibling-layer rules were patterns on `@/features/*/...`
+specifiers, but the slices import their own layers relatively
+(`../application/ports`, `../domain/time`), so
+`import { formatValue } from '../ui/format'` in a `domain/` file passed
+lint; a probe against the old config confirmed it. A zone resolves the
+import to a file before it compares, so the spelling does not matter, which
+is why the database fence already has `DB_PATH_ZONE`. The zones sit in
+`LOCKED_ZONES`, so the three blocks that restate it (every source file,
+tests, and code outside the data layer) all carry them; flat config
+replaces a rule's options instead of merging them, and a zone added to one
+block alone would drop out of the others. The `lib/workos` fence closes the
+item carried from 22 Sep. It is a zone of its own, not part of
+`UI_NEVER_HOLDS_THE_DATABASE`, because that zone's target is all of `app/`,
+and the routes in `app/api` are where `lib/workos` is used. Rejected:
+adding relative forms such as `../ui/**` to the specifier patterns, because
+a relative pattern depends on how deep the importing file sits, so
+`../../ui/x` from a folder inside `domain/` would pass. Rejected for now: a
+cross-slice rule on resolved paths. A zone cannot tie its target and its
+`from` to the same slice name, so it would take one zone per slice, read
+from `src/features/` when the config loads so that a new slice is not
+missed. No slice reaches another relatively today, the `@/features/...`
+deep path is refused by `CROSS_SLICE`, and the new zones already refuse
+another slice's `api/` or `ui/` from `domain/`, `application/` or
+`infrastructure/` however it is spelled.
+
+**Consequence.** A layer violation fails `npm run lint` whichever way the
+import is written, test files included, since a test sits in its layer and
+is held to it. `src/eslint-config.test.ts` lints one probe import per rule
+at a path that does not exist, through the real config, and fails if a zone
+stops matching (a glob that never matches fails silently otherwise): every
+forbidden layer pair, relatively and by alias, `domain/` to `ui/` from a
+test file, `lib/workos` from each UI folder, and the imports that must
+stay allowed (`infrastructure/` to `application/ports`, `ui/` to `api/`,
+`api/` to `application/`, a route and `lib/` to `lib/workos`).
+`docs/architecture/boundaries.md` says how each half of the slice rules
+is checked and lists the `lib/workos` row.
+
+## 2026-09-24 — The middleware matches the path Next routes, decoded
+
+**Decision.** `src/middleware.ts` decodes the path once (`decodedPath`:
+`decodeURIComponent`, or the path as sent when it does not decode) and
+runs every check on that form: the credential budget, the API budget and
+its key, the page allowlist and the API 401. A path is protected when
+either the form as sent or the decoded form matches
+`PROTECTED_PATH_PREFIXES`. A path is public only on the form as sent.
+
+**Why.** Next 16.3's production filesystem check also tries the decoded
+path when the path as sent matches no file, but hands the middleware the
+path as sent. "Sign-in submissions are throttled, page views are not"
+decoded for the credential budget alone, and the whole-branch review
+found the other checks still reading the raw path. `/%64ashboard` (and
+`/%6Frders`, `/%73ettings`) matched no protected prefix, so a visitor
+without a cookie got the dashboard shell, the leak the allowlist exists
+to stop. `/%61pi/<route>` skipped the API budget and the 401.
+`/api/%70roducts` passed the prefix test but keyed a bucket of its own,
+so every spelling of a route had 100 calls a minute. `defineRoute`
+still checked the session, so no data was exposed; what was lost was the
+page gate and the per-address budget. Public stays on the form as sent
+because no public path holds a `%`: a public path decodes to a public
+path, and an encoded spelling cannot opt a protected path into
+`PUBLIC_PATH_PREFIXES`. Rejected: refusing every path that holds a `%`,
+which would also refuse an encoded character in a dynamic segment
+(`/dashboard/[metric]`, `/api/organizations/[id]`).
+
+**Consequence.** Each spelling of an API route now spends the one
+budget of its decoded path. An encoded spelling of a pre-session route,
+such as `/api/%61uth/workos/password`, is not public as sent, so without
+a cookie it is a 401, as it was before; the credential budget counts it
+all the same. `src/middleware.test.ts` pins every (dashboard) directory
+with its first letter encoded, and `/settings%2Fhealth`, going to the
+login page; the 401 for `/%61pi/products`; and `/%61pi/products` and
+`/api/%70roducts` spending the budget of `/api/products`. The same tests
+fail against the middleware as it was.
 
 ## 2026-09-24 — After the sectors: one journey for developers, and the engines
 

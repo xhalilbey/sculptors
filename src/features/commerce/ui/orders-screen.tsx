@@ -2,9 +2,9 @@
 
 import { ArrowRight, Check } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import type { Tone } from '@/components/charts/verdict';
 import { darkCard, lightCard } from '@/components/ui/surfaces';
-import { useDashboardTheme } from '@/hooks/use-dashboard-theme';
+import { useDashboardTheme, type DashboardTheme } from '@/hooks/use-dashboard-theme';
+import { useRemote } from '@/hooks/use-remote';
 import { cn } from '@/lib/utils';
 import { fetchOrders } from '../api/client';
 import {
@@ -19,7 +19,6 @@ import {
 } from '../domain/orders';
 import { FilterChips, LoadError, NoMatches, ResultCount, SearchField } from './toolbar';
 import { ago, useNow } from './use-now';
-import { useRemote } from './use-remote';
 
 /**
  * Orders: the latest orders as live tracking cards (owner's direction, 23
@@ -56,9 +55,9 @@ function arrival(eta: string, now: number): string {
 }
 
 /** The hollow stop has to hide the dotted line behind it, so it takes the card's own face. */
-const STOP_FACE: Record<Tone, string> = { dark: 'bg-[#1b1b1e]', light: 'bg-white' };
+const STOP_FACE: Record<DashboardTheme, string> = { dark: 'bg-[#1b1b1e]', light: 'bg-white' };
 
-function DeliveryTrack({ order, now, tone }: { order: Order; now: number; tone: Tone }) {
+function DeliveryTrack({ order, now, tone }: { order: Order; now: number; tone: DashboardTheme }) {
   const current = stageOf(order);
 
   return (
@@ -106,7 +105,7 @@ function DeliveryTrack({ order, now, tone }: { order: Order; now: number; tone: 
   );
 }
 
-function OrderCard({ order, currency, now, tone }: { order: Order; currency: string; now: number; tone: Tone }) {
+function OrderCard({ order, currency, now, tone }: { order: Order; currency: string; now: number; tone: DashboardTheme }) {
   const money = new Intl.NumberFormat('en-US', { style: 'currency', currency });
   const stage = stageOf(order);
   const placedAt = order.reached[0]?.at;
@@ -161,7 +160,7 @@ function OrderCard({ order, currency, now, tone }: { order: Order; currency: str
 export function OrdersScreen() {
   const theme = useDashboardTheme();
   const now = useNow();
-  const { data, error, retry } = useRemote(fetchOrders, POLL_MS);
+  const { data, error, retry } = useRemote(fetchOrders, { pollMs: POLL_MS });
   const [filters, setFilters] = useState<OrderFilters>(DEFAULT_ORDER_FILTERS);
   const orders = useMemo(() => data?.orders ?? [], [data]);
   const shown = useMemo(() => filterOrders(orders, filters), [orders, filters]);

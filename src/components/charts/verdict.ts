@@ -1,3 +1,4 @@
+import type { DashboardTheme } from '@/hooks/use-dashboard-theme';
 import type { Verdict } from '@/lib/change';
 
 /**
@@ -6,7 +7,11 @@ import type { Verdict } from '@/lib/change';
  * never alone.
  */
 
-export type Tone = 'dark' | 'light';
+/**
+ * The surface a chart sits on: the dark card, or white. That is the
+ * dashboard's theme, so the union is the theme's own, under a chart's name.
+ */
+export type Tone = DashboardTheme;
 
 /**
  * Lines, each at least 3:1 on its surface: on the dark card (#151517) green

@@ -1,8 +1,10 @@
+import { DrizzleQueryError } from 'drizzle-orm';
 import { NextRequest, NextResponse } from 'next/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import type * as ResourceCheckModule from '@/lib/tenancy/resource-check';
 import { okSession, sessionOrganization, USER_ID } from '@/test/session-fixtures';
+import { AppError } from '@/types/errors';
 
 /**
  * defineRoute decides which organization a request runs under. The tests
@@ -10,7 +12,11 @@ import { okSession, sessionOrganization, USER_ID } from '@/test/session-fixtures
  * usable (expired, inactive, outside the allowlist), a named organization the
  * caller is not in, a malformed id, a resource the tenant cannot see. And the
  * one subtle success: a handler that switched the session keeps its newer
- * cookie.
+ * cookie. Every answer, refusals included, is marked private and unstored.
+ * Error answers carry the messages this codebase wrote for the caller (a
+ * body that is not JSON, of the wrong type or too large, a malformed id) and
+ * nothing of any other error: a failed query's message holds its SQL and
+ * values, and a failed fetch is our outage, not the user's network.
  */
 
 const resolveSession = vi.fn();
@@ -32,7 +38,8 @@ vi.mock('@/lib/tenancy/resource-check', async (importOriginal) => ({
   runResourceCheck,
 }));
 
-const { defineRoute, definePublicRoute, MAX_BODY_BYTES } = await import('./define-route');
+const { defineRoute, definePublicRoute } = await import('./define-route');
+const { MAX_BODY_BYTES } = await import('./read-json-body');
 const { defineResourceCheck } = await import('@/lib/tenancy/resource-check');
 
 function session(refreshed?: string) {
@@ -76,6 +83,19 @@ describe('defineRoute', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
+  it('answers a request with no session cookie as signed out, before resolving a session', async () => {
+    const handler = vi.fn();
+
+    const response = await defineRoute({ authz: { kind: 'session-organization' }, handler })(
+      new NextRequest('http://localhost:3000/api/x')
+    );
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'Unauthorized. Please log in.' });
+    expect(resolveSession).not.toHaveBeenCalled();
+    expect(handler).not.toHaveBeenCalled();
+  });
+
   it('resolves the session with refresh allowed, from the cookie', async () => {
     resolveSession.mockResolvedValue(session());
 
@@ -96,6 +116,8 @@ describe('defineRoute', () => {
 
   it('authorizes an explicitly named organization by its own membership', async () => {
     resolveSession.mockResolvedValue(session());
+    // The session's role is 'member'; the tenant takes the named organization's.
+    ensureOrganizationAccess.mockResolvedValue({ authorized: true, role: 'owner' });
     const handler = vi.fn().mockResolvedValue({ ok: true });
     const route = defineRoute({
       params: idParams,
@@ -106,7 +128,7 @@ describe('defineRoute', () => {
     await route(request(), segment('org_B'));
 
     expect(ensureOrganizationAccess).toHaveBeenCalledWith('org_B', USER_ID);
-    expect(handler.mock.calls[0]?.[1].tenant.organizationId).toBe('org_B');
+    expect(handler.mock.calls[0]?.[1].tenant).toEqual({ organizationId: 'org_B', userId: USER_ID, role: 'owner' });
   });
 
   it('refuses a named organization the caller is not in', async () => {
@@ -125,6 +147,23 @@ describe('defineRoute', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
+  it('answers 500, not 403, when the membership lookup for a named organization fails', async () => {
+    resolveSession.mockResolvedValue(session());
+    ensureOrganizationAccess.mockRejectedValue(new Error('connect ECONNREFUSED'));
+    const handler = vi.fn();
+    const route = defineRoute({
+      params: idParams,
+      authz: { kind: 'explicit-organization', organizationId: (input) => input.params.id },
+      handler,
+    });
+
+    const response = await route(request(), segment('org_B'));
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: 'Something went wrong. Please try again.' });
+    expect(handler).not.toHaveBeenCalled();
+  });
+
   it('answers 400 for a malformed organization id without asking the mirror', async () => {
     resolveSession.mockResolvedValue(session());
     const route = defineRoute({
@@ -136,6 +175,7 @@ describe('defineRoute', () => {
     const response = await route(request(), segment("org_A' or 1=1"));
 
     expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'Invalid organization id' });
     expect(ensureOrganizationAccess).not.toHaveBeenCalled();
   });
 
@@ -163,7 +203,7 @@ describe('defineRoute', () => {
     })(request());
 
     expect(response.status).toBe(200);
-    expect(handler).toHaveBeenCalled();
+    expect(handler.mock.calls[0]?.[1].tenant).toEqual({ organizationId: 'org_A', userId: USER_ID, role: 'member' });
   });
 
   it('does not accept a bare function as a resource check', () => {
@@ -236,19 +276,49 @@ describe('defineRoute, hardened', () => {
     expect(await response.json()).toEqual({ error: 'Invalid request', fields: { name: ['Name required'] } });
   });
 
-  it('answers an unexpected throw with 500 and a sanitized message', async () => {
+  it('answers a body that is not JSON with 400 and says so, in either envelope', async () => {
+    resolveSession.mockResolvedValue(session());
+    const handler = vi.fn();
+
+    const plain = await defineRoute({ body: bodySchema, authz: { kind: 'session-organization' }, handler })(
+      post('{"name":')
+    );
+    const success = await defineRoute({
+      envelope: 'success',
+      body: bodySchema,
+      authz: { kind: 'session-organization' },
+      handler,
+    })(post('{"name":'));
+
+    expect(plain.status).toBe(400);
+    expect(await plain.json()).toEqual({ error: 'Request body must be valid JSON' });
+    expect(success.status).toBe(400);
+    expect(await success.json()).toEqual({ success: false, error: 'Request body must be valid JSON' });
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a failed fetch', new TypeError('fetch failed'), 500],
+    ['a dropped database connection', new Error('Connection terminated unexpectedly'), 500],
+    [
+      'a failed query, whose message holds the SQL and its values',
+      new DrizzleQueryError('select "id" from "users" where "email" = $1', ['ada@example.com']),
+      500,
+    ],
+    ['a constraint violation', new Error('duplicate key value violates unique constraint "secret_internal_idx"'), 500],
+    ['an AppError from an upstream outage', new AppError('WorkOS answered 503 for org_internal', 'UPSTREAM', 503), 503],
+  ])('answers %s with the generic message and nothing of the error', async (_case, thrown, status) => {
     resolveSession.mockResolvedValue(session());
 
     const response = await defineRoute({
       authz: { kind: 'session-organization' },
       handler: async () => {
-        throw new Error('duplicate key value violates unique constraint "secret_internal_idx"');
+        throw thrown;
       },
     })(request());
-    const body = await response.json();
 
-    expect(response.status).toBe(500);
-    expect(JSON.stringify(body)).not.toContain('secret_internal_idx');
+    expect(response.status).toBe(status);
+    expect(await response.json()).toEqual({ error: 'Something went wrong. Please try again.' });
   });
 
   it('stores a refreshed session on a plain Response a handler returned', async () => {
@@ -295,6 +365,56 @@ describe('defineRoute, hardened', () => {
     }
   });
 
+  it('marks every answer private and unstored', async () => {
+    resolveSession.mockResolvedValue(session('sealed-refreshed'));
+    const answered = await defineRoute({ authz: { kind: 'session-organization' }, handler: async () => ({ ok: true }) })(
+      request('GET')
+    );
+
+    resolveSession.mockResolvedValue({ kind: 'none' });
+    const refused = await defineRoute({ authz: { kind: 'session-organization' }, handler: vi.fn() })(request('GET'));
+
+    const foreign = await defineRoute({ authz: { kind: 'session-organization' }, handler: vi.fn() })(
+      new NextRequest('http://localhost:3000/api/x', { method: 'POST', headers: { origin: 'https://evil.example' } })
+    );
+    const publicAnswer = await definePublicRoute({ justification: 'test', handler: async () => ({ ok: true }) })(
+      new NextRequest('http://localhost:3000/api/p')
+    );
+
+    expect([answered.status, refused.status, foreign.status, publicAnswer.status]).toEqual([200, 401, 403, 200]);
+
+    for (const response of [answered, refused, foreign, publicAnswer]) {
+      expect(response.headers.get('cache-control')).toBe('private, no-store');
+    }
+  });
+
+  it('keeps a cache header the handler chose, unless the answer carries the session cookie', async () => {
+    const cached = async () => NextResponse.json({ ok: true }, { headers: { 'Cache-Control': 'public, max-age=60' } });
+
+    resolveSession.mockResolvedValue(session());
+    const plain = await defineRoute({ authz: { kind: 'session-organization' }, handler: cached })(request('GET'));
+
+    resolveSession.mockResolvedValue(session('sealed-refreshed'));
+    const refreshed = await defineRoute({ authz: { kind: 'session-organization' }, handler: cached })(request('GET'));
+
+    resolveSession.mockResolvedValue(session());
+    const switched = await defineRoute({
+      authz: { kind: 'session-organization' },
+      handler: async () => {
+        const response = await cached();
+
+        response.cookies.set('wos-session', 'sealed-switched');
+
+        return response;
+      },
+    })(request('GET'));
+
+    expect(plain.headers.get('cache-control')).toBe('public, max-age=60');
+    expect(refreshed.cookies.get('wos-session')?.value).toBe('sealed-refreshed');
+    expect(refreshed.headers.get('cache-control')).toBe('private, no-store');
+    expect(switched.headers.get('cache-control')).toBe('private, no-store');
+  });
+
   it('keeps a well-formed request id and replaces a forged one', async () => {
     resolveSession.mockResolvedValue(session());
     const route = defineRoute({ authz: { kind: 'session-organization' }, handler: async () => ({ ok: true }) });
@@ -336,7 +456,9 @@ describe('defineRoute, hardened', () => {
 
     expect(big.length).toBeGreaterThan(MAX_BODY_BYTES);
     expect(declared.status).toBe(413);
+    expect(await declared.json()).toEqual({ error: 'Request body is too large' });
     expect(streamed.status).toBe(413);
+    expect(await streamed.json()).toEqual({ error: 'Request body is too large' });
     expect(handler).not.toHaveBeenCalled();
   });
 
@@ -349,6 +471,7 @@ describe('defineRoute, hardened', () => {
     );
 
     expect(response.status).toBe(415);
+    expect(await response.json()).toEqual({ error: 'Content-Type must be application/json' });
     expect(handler).not.toHaveBeenCalled();
   });
 

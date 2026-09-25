@@ -3,11 +3,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 /**
  * dbEnv's refinements are tripwires for pasting the wrong URL into the app's
  * slot. Each must refuse, and the refusal must never repeat the URL: it
- * carries the password.
+ * carries the password. They must also read the URL as pg does: a query
+ * parameter pg applies over the URL's parts, a repeated key (pg keeps the
+ * last), a socket: URL, or a parameter name pg leaves encoded would otherwise
+ * connect in a way the checks never saw.
  */
 
 const PASSWORD = 's3cret-p4ss';
 const POOLED = `postgresql://sculptors_app:${PASSWORD}@ep-x-pooler.eu-central-1.aws.neon.tech/neondb?sslmode=verify-full`;
+// The local Postgres the cloud sessions run the app against.
+const LOCAL_POOLED =
+  `postgres://sculptors_app:${PASSWORD}@db-pooler.sculptors.test:5432/sculptors` +
+  '?sslmode=verify-full&sslrootcert=/var/lib/postgresql/sculptors-dev/ca.crt';
 
 async function load(url: string | undefined) {
   // Owner-only keys exported in the developer's shell must not decide these
@@ -39,12 +46,34 @@ describe('dbEnv', () => {
   });
 
   it.each([
+    ["Neon's copied form with channel_binding", `${POOLED}&channel_binding=require`],
+    ['the local pooled URL with its own CA', LOCAL_POOLED],
+  ])('accepts %s', async (_case, url) => {
+    const dbEnv = await load(url);
+
+    expect(dbEnv().DATABASE_URL).toBe(url);
+  });
+
+  it.each([
     ['unset', undefined, /DATABASE_URL is not set/],
     ['not a URL', 'nonsense', /not a URL/],
     ['the direct host', POOLED.replace('-pooler.', '.'), /pooled host/],
     ['the owner role', POOLED.replace('sculptors_app:', 'neondb_owner:'), /sculptors_app, not the owner/],
     ['sslmode=require', POOLED.replace('verify-full', 'require'), /sslmode=verify-full/],
     ['no sslmode', POOLED.replace('?sslmode=verify-full', ''), /sslmode=verify-full/],
+    ['a socket: URL', POOLED.replace('postgresql:', 'socket:'), /postgres:\/\/ or postgresql:\/\/ scheme/],
+    ['a user parameter', `${POOLED}&user=neondb_owner`, /only sslmode, channel_binding and sslrootcert/],
+    ['a host parameter', `${POOLED}&host=ep-x.eu-central-1.aws.neon.tech`, /only sslmode, channel_binding/],
+    ['an options parameter', `${POOLED}&options=-c%20role%3Dneondb_owner`, /only sslmode, channel_binding/],
+    ['a second sslmode=disable', `${POOLED}&sslmode=disable`, /must not repeat a query parameter/],
+    ['a second sslmode=no-verify', `${POOLED}&sslmode=no-verify`, /must not repeat a query parameter/],
+    // The malformed escape makes pg re-encode the URL, and it reads the key
+    // as `ssl%6Dode`: no sslmode, so no TLS.
+    [
+      'a parameter name pg leaves encoded',
+      `${POOLED.replace('?sslmode', '?ssl%6Dode')}&channel_binding=re%zzquire`,
+      /only sslmode, channel_binding and sslrootcert/,
+    ],
   ])('refuses %s without echoing the URL', async (_case, url, rule) => {
     const dbEnv = await load(url);
 

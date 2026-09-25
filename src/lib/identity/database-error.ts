@@ -9,13 +9,13 @@ import { DrizzleQueryError } from 'drizzle-orm';
  * message, SQLSTATE and constraint are on `.cause`. The driver's `detail` is
  * left out on purpose: for a unique violation it echoes the key's value.
  */
-export type DatabaseFailure = {
+type DatabaseFailure = {
   reason: string;
   code?: string;
   constraint?: string;
 };
 
-export function describeDatabaseFailure(error: unknown): DatabaseFailure {
+function describeDatabaseFailure(error: unknown): DatabaseFailure {
   if (error instanceof DrizzleQueryError) {
     // Without a cause the only text is the SQL and its values; say nothing.
     if (!(error.cause instanceof Error)) return { reason: 'query failed' };

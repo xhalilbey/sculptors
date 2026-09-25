@@ -15,6 +15,13 @@ import type { OrganizationId } from '@/types/ids';
  * runResourceCheck is what runs it, inside withTenant, for the tenant
  * defineRoute authorized. A plain function no longer type-checks.
  *
+ * RLS scopes only the tenant tables, those built with tenantPolicy
+ * (src/db/schema/_shared.ts). The identity tables are control plane
+ * (controlPlanePolicy, `using true`): inside withTenant the app role still
+ * sees every organization's rows there, so a check that reads one is
+ * scoped by nothing but its own filter, and must compare against
+ * `tenant.organizationId` itself.
+ *
  * This module and lib/identity are the only lib/ code allowed to import
  * src/db (see docs/architecture/boundaries.md).
  */

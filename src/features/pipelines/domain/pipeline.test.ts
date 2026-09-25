@@ -3,6 +3,7 @@ import {
   draftProblems,
   emptyDraft,
   filterPipelines,
+  hasActiveFilters,
   NO_FILTERS,
   sortPipelines,
   tagsFrom,
@@ -66,6 +67,18 @@ describe('filterPipelines', () => {
     expect(ids({ scope: 'favorites' })).toEqual(['job_bbb222']);
     expect(ids({ tags: ['catalog', 'pages'] })).toEqual(['sync_aaa111', 'job_bbb222']);
     expect(ids({ runAs: ['Ayşe'] })).toEqual(['job_ccc333']);
+  });
+});
+
+describe('hasActiveFilters', () => {
+  it('is false for no filters and true once any one of them is set', () => {
+    expect(hasActiveFilters(NO_FILTERS)).toBe(false);
+    expect(hasActiveFilters({ ...NO_FILTERS, query: 'shop' })).toBe(true);
+    expect(hasActiveFilters({ ...NO_FILTERS, kind: 'job' })).toBe(true);
+    expect(hasActiveFilters({ ...NO_FILTERS, scope: 'owned' })).toBe(true);
+    expect(hasActiveFilters({ ...NO_FILTERS, scope: 'favorites' })).toBe(true);
+    expect(hasActiveFilters({ ...NO_FILTERS, tags: ['catalog'] })).toBe(true);
+    expect(hasActiveFilters({ ...NO_FILTERS, runAs: ['Ayşe'] })).toBe(true);
   });
 });
 

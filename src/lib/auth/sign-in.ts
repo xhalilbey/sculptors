@@ -2,9 +2,10 @@ import 'server-only';
 
 import { AuthenticationException, type AuthenticationResponse } from '@workos-inc/node';
 import { logger } from '@/lib/logger';
+import { clientIpFrom } from '@/lib/security/client-ip';
 import {
   AccountInactiveError,
-  buildSessionContext,
+  establishSignInSession,
   getWorkOSClient,
   getWorkOSEnv,
   WorkOSAccountForbiddenError,
@@ -168,19 +169,12 @@ export async function completeSignIn(
   }
 
   try {
-    const built = await buildSessionContext(
-      {
-        user: outcome.user,
-        sessionId: null,
-        organizationId: outcome.organizationId ?? null,
-        role: null,
-        roles: [],
-        permissions: [],
-      },
-      { sessionData: outcome.sealedSession }
-    );
+    const established = await establishSignInSession(outcome.user, {
+      organizationId: outcome.organizationId ?? null,
+      sessionData: outcome.sealedSession,
+    });
 
-    return { kind: 'signed-in', sealedSession: built.refreshedSessionData ?? outcome.sealedSession };
+    return { kind: 'signed-in', sealedSession: established.refreshedSessionData ?? outcome.sealedSession };
   } catch (error) {
     // Outside the allowlist, or a row that is not active (suspended here,
     // deleted in WorkOS): no cookie either way.
@@ -194,12 +188,15 @@ export async function completeSignIn(
   }
 }
 
-/** The caller's address and agent, as WorkOS wants them for its own checks. */
+/**
+ * The caller's address and agent, as WorkOS wants them for its own checks.
+ * The address is the one our edge appended (clientIpFrom), the same one the
+ * rate limiter keys on; before 24 Sep this sent the leftmost X-Forwarded-For
+ * entry, which the caller writes.
+ */
 export function signInContextFrom(headers: Headers): SignInContext {
   return {
-    // The security plan replaces this with the trusted-hop client IP; until
-    // then it is what the email-verification route always sent.
-    ipAddress: headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
+    ipAddress: clientIpFrom(headers),
     userAgent: headers.get('user-agent') || null,
   };
 }

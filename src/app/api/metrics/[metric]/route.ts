@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server';
 import {
   getMetricDetail,
   metricDetailQuerySchema,
@@ -29,6 +28,6 @@ export const GET = defineRoute({
     });
     const body: MetricDetailResponse = { success: true, detail };
 
-    return NextResponse.json(body, { headers: { 'Cache-Control': 'no-store' } });
+    return body;
   },
 });

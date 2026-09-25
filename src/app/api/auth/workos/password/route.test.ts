@@ -29,11 +29,14 @@ const m = (() => {
   return mocks.current;
 })();
 
-function post(body: unknown = { email: 'ada@example.com', password: 'correct horse' }) {
+function post(
+  body: unknown = { email: 'ada@example.com', password: 'correct horse' },
+  headers: Record<string, string> = {}
+) {
   return POST(
     new NextRequest('http://localhost:3000/api/auth/workos/password', {
       method: 'POST',
-      headers: { origin: 'http://localhost:3000', 'content-type': 'application/json', 'user-agent': 'vitest' },
+      headers: { origin: 'http://localhost:3000', 'content-type': 'application/json', 'user-agent': 'vitest', ...headers },
       body: JSON.stringify(body),
     })
   );
@@ -45,8 +48,8 @@ function authError(status: number, rawData: Record<string, unknown>) {
 
 beforeEach(() => {
   for (const fn of Object.values(m.userManagement)) fn.mockReset();
-  m.buildSessionContext.mockReset();
-  m.buildSessionContext.mockResolvedValue({ context: {}, refreshedSessionData: undefined });
+  m.establishSignInSession.mockReset();
+  m.establishSignInSession.mockResolvedValue({});
 });
 
 describe('POST /api/auth/workos/password', () => {
@@ -66,15 +69,25 @@ describe('POST /api/auth/workos/password', () => {
         session: { sealSession: true, cookiePassword: 'x'.repeat(32) },
       })
     );
-    expect(m.buildSessionContext).toHaveBeenCalledWith(
-      expect.objectContaining({ organizationId: 'org_A' }),
-      { sessionData: 'sealed-1' }
+    expect(m.establishSignInSession).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'user_w1' }),
+      { organizationId: 'org_A', sessionData: 'sealed-1' }
+    );
+  });
+
+  it('sends workos the address our edge appended, not a forged one', async () => {
+    m.userManagement.authenticateWithPassword.mockResolvedValue(authenticated('sealed-1', 'org_A'));
+
+    await post(undefined, { 'x-forwarded-for': 'forged, 203.0.113.5' });
+
+    expect(m.userManagement.authenticateWithPassword).toHaveBeenCalledWith(
+      expect.objectContaining({ ipAddress: '203.0.113.5' })
     );
   });
 
   it('stores the session re-issued for an organization when WorkOS issued it unbound', async () => {
     m.userManagement.authenticateWithPassword.mockResolvedValue(authenticated('sealed-unbound'));
-    m.buildSessionContext.mockResolvedValue({ context: {}, refreshedSessionData: 'sealed-bound' });
+    m.establishSignInSession.mockResolvedValue({ refreshedSessionData: 'sealed-bound' });
 
     const response = await post();
 
@@ -146,7 +159,7 @@ describe('POST /api/auth/workos/password', () => {
 
   it('answers 503, not 401, when the database fails after WorkOS said yes', async () => {
     m.userManagement.authenticateWithPassword.mockResolvedValue(authenticated());
-    m.buildSessionContext.mockRejectedValue(new Error('connection refused'));
+    m.establishSignInSession.mockRejectedValue(new Error('connection refused'));
 
     const response = await post();
 
@@ -162,7 +175,7 @@ describe('POST /api/auth/workos/password', () => {
 
   it('answers 403 for an account outside the allowlist', async () => {
     m.userManagement.authenticateWithPassword.mockResolvedValue(authenticated());
-    m.buildSessionContext.mockRejectedValue(new m.WorkOSAccountForbiddenError());
+    m.establishSignInSession.mockRejectedValue(new m.WorkOSAccountForbiddenError());
 
     const response = await post();
 
@@ -172,7 +185,7 @@ describe('POST /api/auth/workos/password', () => {
 
   it('refuses a suspended user at sign-in, without a cookie', async () => {
     m.userManagement.authenticateWithPassword.mockResolvedValue(authenticated());
-    m.buildSessionContext.mockRejectedValue(new m.AccountInactiveError());
+    m.establishSignInSession.mockRejectedValue(new m.AccountInactiveError());
 
     const response = await post();
 
@@ -184,6 +197,28 @@ describe('POST /api/auth/workos/password', () => {
     const response = await post({ email: 'not-an-email', password: '' });
 
     expect(response.status).toBe(400);
+    expect(m.userManagement.authenticateWithPassword).not.toHaveBeenCalled();
+  });
+
+  it('refuses a body over 64 KiB without calling workos', async () => {
+    const response = await post({ email: 'ada@example.com', password: 'x'.repeat(70 * 1024) });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ success: false, error: 'A valid email and password are required.' });
+    expect(m.userManagement.authenticateWithPassword).not.toHaveBeenCalled();
+  });
+
+  it('refuses a body that is not JSON without calling workos', async () => {
+    const response = await post(undefined, { 'content-type': 'text/plain' });
+
+    expect(response.status).toBe(400);
+    expect(m.userManagement.authenticateWithPassword).not.toHaveBeenCalled();
+  });
+
+  it('refuses a foreign origin before calling workos', async () => {
+    const response = await post(undefined, { origin: 'https://evil.example' });
+
+    expect(response.status).toBe(403);
     expect(m.userManagement.authenticateWithPassword).not.toHaveBeenCalled();
   });
 });

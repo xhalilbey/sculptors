@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * Every defineRoute route gates on this helper. What it must never do is say
- * yes when the mirror has no active membership, or when a caller disagrees
- * with itself about which organization is the session's. The membership lookup
- * is the service (findMembership over the identity repositories), mocked
- * here; its own fail-closed behaviour is tested against PGlite.
+ * defineRoute's explicit-organization routes gate on this helper. What it
+ * must never do is say yes when the mirror has no active membership, nor
+ * turn a failed lookup into "no access": an outage is a 500, not a 403. The
+ * membership lookup is the service (findMembership over the identity
+ * repositories), mocked here; its own behaviour is tested against PGlite.
  */
 
 const findMembership = vi.fn();
@@ -37,19 +37,20 @@ describe('ensureOrganizationAccess', () => {
     });
   });
 
-  it('denies without consulting the mirror when organization and session organization disagree', async () => {
-    const result = await ensureOrganizationAccess('org_1', 'user_1', 'org_2');
-
-    expect(result.authorized).toBe(false);
-    expect(findMembership).not.toHaveBeenCalled();
-  });
-
   it('asks the mirror about the organization and user it was given', async () => {
     findMembership.mockResolvedValue(null);
 
-    await ensureOrganizationAccess('org_1', 'user_1', 'org_1');
+    await ensureOrganizationAccess('org_1', 'user_1');
 
     expect(findMembership).toHaveBeenCalledWith('user_1', 'org_1');
+  });
+
+  it('lets a database failure through', async () => {
+    const outage = new Error('connect ECONNREFUSED');
+
+    findMembership.mockRejectedValue(outage);
+
+    await expect(ensureOrganizationAccess('org_1', 'user_1')).rejects.toBe(outage);
   });
 
   it('maps the WorkOS admin slug to owner and everything else to member', async () => {

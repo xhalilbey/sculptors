@@ -1,20 +1,33 @@
 /**
- * In-Memory Rate Limiter
- * Protects against brute force and DDoS attacks
- * Uses sliding window algorithm
+ * In-memory fixed-window rate limiter, one store per server instance.
+ *
+ * A key's window opens at its first attempt and lasts `windowMs`. Up to
+ * `maxAttempts` are admitted in it; after that every attempt is refused
+ * until the window ends, and the next attempt opens a new one. Each
+ * instance counts only the requests it serves.
+ *
+ * Before 24 Sep this header said 'sliding window', and each entry kept an
+ * array of attempt timestamps that every call filtered by age. But the
+ * entry was also replaced once its resetTime had passed, so inside a live
+ * window the filter had nothing to drop: it was already this fixed window,
+ * with an array standing in for a counter.
  */
+
+import { clientIpFrom } from './client-ip';
 
 interface RateLimitEntry {
   resetTime: number;
-  attempts: number[];
+  count: number;
 }
 
-interface RateLimitConfig {
+/** One budget: at most `maxAttempts` per `windowMs`. */
+export interface RateLimitConfig {
   maxAttempts: number;
   windowMs: number;
 }
 
-interface RateLimitResult {
+/** The answer to one attempt, with the time its window resets. */
+export interface RateLimitResult {
   allowed: boolean;
   remaining: number;
   resetTime: number;
@@ -31,9 +44,12 @@ let cleanupTimer: NodeJS.Timeout | null = null;
  * Rate limit configurations for different endpoints
  */
 export const RATE_LIMITS = {
-  // Authentication endpoints
-  LOGIN: {
-    maxAttempts: 5,
+  // Every credential submission from one address, across the password,
+  // email-code and password-reset routes together (src/middleware.ts).
+  // Before 24 Sep this was LOGIN, 5 per 15 minutes, spent on /auth/* page
+  // views, where no credential is checked, while the POSTs went unthrottled.
+  AUTH_SUBMIT: {
+    maxAttempts: 10,
     windowMs: 15 * 60 * 1000, // 15 minutes
   },
   // API endpoints
@@ -78,7 +94,10 @@ const generateKey = (identifier: string, endpoint: string): string => {
 };
 
 /**
- * Check rate limit with sliding window algorithm
+ * Count one attempt against the key's current window. A key with no entry,
+ * or whose window has passed its resetTime, opens a new window of
+ * `config.windowMs` at this attempt. Only admitted attempts are counted,
+ * and a window's end never moves, so refused retries cannot extend it.
  */
 const checkRateLimit = (
   identifier: string,
@@ -91,37 +110,26 @@ const checkRateLimit = (
   // Start cleanup if not running (ensure first entry schedules cleanup)
   startCleanup();
 
-  // Get or create entry
   let entry = store.get(key);
 
-  // Create new entry if doesn't exist or expired
+  // Open a new window if there is none or the last one has ended
   if (!entry || now > entry.resetTime) {
     entry = {
       resetTime: now + config.windowMs,
-      attempts: [],
+      count: 0,
     };
     store.set(key, entry);
   }
 
-  // Sliding window: Remove attempts outside the window
-  const windowStart = now - config.windowMs;
-
-  entry.attempts = entry.attempts.filter(
-    (timestamp) => timestamp > windowStart
-  );
-
-  // Check if limit exceeded
-  const currentCount = entry.attempts.length;
-  const allowed = currentCount < config.maxAttempts;
+  const allowed = entry.count < config.maxAttempts;
 
   if (allowed) {
-    // Add current attempt
-    entry.attempts.push(now);
+    entry.count += 1;
   }
 
   return {
     allowed,
-    remaining: Math.max(0, config.maxAttempts - currentCount - (allowed ? 1 : 0)),
+    remaining: allowed ? config.maxAttempts - entry.count : 0,
     resetTime: entry.resetTime,
   };
 };
@@ -140,63 +148,17 @@ export const rateLimit = (
 };
 
 /**
- * Extract identifier from request (IP or user ID)
+ * The rate-limit key for a request: the caller's address as our edge saw it
+ * (clientIpFrom, which trusts one hop), or one shared 'ip:unknown' bucket
+ * when no proxy header names an address.
+ *
+ * Before 24 Sep this also preferred `request.ip`, which Next 15 removed from
+ * NextRequest, so the branch never ran; and without proxy headers it keyed
+ * on the `sub` of a Bearer token it decoded without verifying, a key the
+ * caller chose.
  */
-export const getIdentifier = (request: Request & { ip?: string | null }): string => {
-  // Prefer platform-provided IP (Next.js sets request.ip when behind trusted proxy)
-  if (request.ip) {
-    return `ip:${request.ip}`;
-  }
+export const getIdentifier = (request: Request): string => {
+  const ip = clientIpFrom(request.headers);
 
-  // Fall back to standard reverse proxy headers.
-  //
-  // Take the LAST entry, not the first. X-Forwarded-For is append-only: each
-  // proxy adds the address it received the request from, so the rightmost
-  // entry is the one written by our own edge and the leftmost is whatever the
-  // client claimed. Reading the first entry let a caller pick its own
-  // rate-limit key by sending its own X-Forwarded-For, which made the login
-  // limiter bypassable by rotating one header.
-  //
-  // This trusts exactly one hop. If the deployment ever sits behind an
-  // additional proxy, this needs to skip that many entries from the right.
-  const forwardedFor = request.headers.get('x-forwarded-for');
-
-  if (forwardedFor) {
-    const hops = forwardedFor
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean);
-    const clientIp = hops.at(-1);
-
-    if (clientIp) {
-      return `ip:${clientIp}`;
-    }
-  }
-
-  const realIp = request.headers.get('x-real-ip');
-
-  if (realIp) {
-    return `ip:${realIp}`;
-  }
-
-  // As a last resort, fall back to auth subject if present
-  const authHeader = request.headers.get('authorization');
-
-  if (authHeader?.startsWith('Bearer ')) {
-    try {
-      const token = authHeader.replace('Bearer ', '');
-      const payload = JSON.parse(
-        Buffer.from(token.split('.')[1] ?? '', 'base64').toString()
-      );
-
-      if (payload.sub) {
-        return `user:${payload.sub}`;
-      }
-    } catch {
-      // Ignore malformed tokens for rate limiting purposes
-    }
-  }
-
-  // Final fallback
-  return 'ip:unknown';
+  return ip ? `ip:${ip}` : 'ip:unknown';
 };

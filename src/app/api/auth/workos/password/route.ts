@@ -1,5 +1,6 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
+import { readJsonBody } from '@/lib/api/read-json-body';
 import { completeSignIn, signInContextFrom, signInOptions } from '@/lib/auth/sign-in';
 import { requireSameOrigin } from '@/lib/security/request-guards';
 import { loginSchema } from '@/lib/validations';
@@ -16,7 +17,9 @@ export async function POST(request: NextRequest) {
     return originFailure;
   }
 
-  const parsedBody = loginSchema.safeParse(await request.json().catch(() => null));
+  // Through the shared 64 KiB, JSON-only reader: a body of another type, an
+  // oversized one or text that is not JSON gets the same 400 as a bad field.
+  const parsedBody = loginSchema.safeParse(await readJsonBody(request).catch(() => null));
 
   if (!parsedBody.success) {
     return NextResponse.json(

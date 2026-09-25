@@ -7,51 +7,43 @@ import { logger } from '@/lib/logger';
 
 interface Props {
   children: ReactNode;
-  fallback?: (error: Error, reset: () => void) => ReactNode;
-  onError?: (error: Error, errorInfo: React.ErrorInfo) => void;
 }
 
 interface State {
-  hasError: boolean;
   error: Error | null;
 }
 
 /**
  * Error Boundary Component
  * Catches JavaScript errors anywhere in the child component tree
+ *
+ * It used to take a `fallback` and an `onError` prop and keep a `hasError`
+ * flag beside the error. Its one caller (AppProviders) passes neither, and
+ * the flag said nothing the error did not, so all three went.
  */
 export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { error: null };
   }
 
   static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
+    return { error };
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    // The one place a caught render error is logged; onError is for
-    // callers that need to react to it, not to log it again.
+    // The one place a caught render error is logged.
     logger.error('ErrorBoundary caught an error', error, {
       componentStack: errorInfo.componentStack,
     });
-
-    // Call custom error handler if provided
-    this.props.onError?.(error, errorInfo);
   }
 
   reset = () => {
-    this.setState({ hasError: false, error: null });
+    this.setState({ error: null });
   };
 
   render() {
-    if (this.state.hasError && this.state.error) {
-      // Use custom fallback if provided
-      if (this.props.fallback) {
-        return this.props.fallback(this.state.error, this.reset);
-      }
-
+    if (this.state.error) {
       // The app's error scene. It used to say "Unable to connect to
       // Sculptors", which is not what a render error is.
       return (

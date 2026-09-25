@@ -1,9 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import type { Tone } from '@/components/charts/verdict';
 import { darkCard, lightCard } from '@/components/ui/surfaces';
-import { useDashboardTheme } from '@/hooks/use-dashboard-theme';
+import { useDashboardTheme, type DashboardTheme } from '@/hooks/use-dashboard-theme';
+import { useRemote } from '@/hooks/use-remote';
 import { cn } from '@/lib/utils';
 import { fetchProducts } from '../api/client';
 import {
@@ -23,7 +23,6 @@ import {
 } from '../domain/products';
 import { ProductArt } from './product-art';
 import { FilterChips, LoadError, NoMatches, PickMenu, ResultCount, SearchField } from './toolbar';
-import { useRemote } from './use-remote';
 
 /**
  * Products: every product as a quiet card -- its picture, its price and
@@ -52,7 +51,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ProductCard({ product, currency, tone }: { product: Product; currency: string; tone: Tone }) {
+function ProductCard({ product, currency, tone }: { product: Product; currency: string; tone: DashboardTheme }) {
   const level = stockLevel(product.stock);
   const money = new Intl.NumberFormat('en-US', { style: 'currency', currency });
 

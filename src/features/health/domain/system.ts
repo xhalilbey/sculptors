@@ -19,7 +19,9 @@ export type ComponentKey = (typeof SYSTEM_COMPONENTS)[number]['key'];
 
 export const COMPONENT_KEYS = SYSTEM_COMPONENTS.map((component) => component.key) as readonly ComponentKey[];
 
-export type Status = 'operational' | 'degraded' | 'outage';
+export const STATUSES = ['operational', 'degraded', 'outage'] as const;
+
+export type Status = (typeof STATUSES)[number];
 
 const STATUS_RANK: Record<Status, number> = { operational: 0, degraded: 1, outage: 2 };
 
@@ -38,14 +40,18 @@ export function worstStatus(statuses: readonly Status[]): Status {
   return statuses.reduce<Status>((worst, status) => (STATUS_RANK[status] > STATUS_RANK[worst] ? status : worst), 'operational');
 }
 
-export type IncidentImpact = 'minor' | 'major';
+export const INCIDENT_IMPACTS = ['minor', 'major'] as const;
+
+export type IncidentImpact = (typeof INCIDENT_IMPACTS)[number];
 
 /** What an incident makes of the part it hits: minor degrades it, major takes it out. */
 export function statusOfImpact(impact: IncidentImpact): Status {
   return impact === 'major' ? 'outage' : 'degraded';
 }
 
-export type IncidentPhase = 'investigating' | 'identified' | 'monitoring' | 'resolved';
+export const INCIDENT_PHASES = ['investigating', 'identified', 'monitoring', 'resolved'] as const;
+
+export type IncidentPhase = (typeof INCIDENT_PHASES)[number];
 
 export interface IncidentUpdate {
   phase: IncidentPhase;

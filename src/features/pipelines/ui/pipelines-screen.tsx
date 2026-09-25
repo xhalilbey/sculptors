@@ -19,6 +19,7 @@ import { brandFace } from '@/components/ui/surfaces';
 import { cn } from '@/lib/utils';
 import {
   filterPipelines,
+  hasActiveFilters,
   KIND_LABELS,
   NO_FILTERS,
   sortPipelines,
@@ -383,7 +384,7 @@ export function PipelinesScreen() {
     () => sortPipelines(filterPipelines(items, filters, memberId), direction),
     [items, filters, memberId, direction]
   );
-  const filtered = filters.query !== '' || filters.kind !== 'all' || filters.scope !== 'accessible' || filters.tags.length > 0 || filters.runAs.length > 0;
+  const filtered = hasActiveFilters(filters);
   const SortIcon = direction === 'asc' ? ArrowUpNarrowWide : ArrowDownNarrowWide;
 
   const onDelete = (item: Pipeline) => {

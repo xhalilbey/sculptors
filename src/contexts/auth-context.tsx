@@ -10,11 +10,19 @@ interface AuthContextType {
   /** The organization the session is bound to. */
   organization: OrganizationDto | null;
   loading: boolean;
-  signOut: () => Promise<void>;
+  /**
+   * Tell the other tabs, clear the local session and navigate to
+   * /api/auth/logout. The page is leaving, so the promise never settles:
+   * a caller that awaits it keeps its pending state until the page goes.
+   */
+  signOut: () => Promise<never>;
   refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+/** The localStorage key signOut writes and every other tab listens for. */
+const LOGOUT_EVENT_KEY = 'auth-logout-event';
 
 let authMeRequest: ReturnType<typeof fetchSession> | null = null;
 
@@ -35,10 +43,6 @@ function isAuthPage() {
   return typeof window !== 'undefined' && window.location.pathname.startsWith('/auth');
 }
 
-function isBrandingPage() {
-  return typeof window !== 'undefined' && window.location.pathname === '/';
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<SessionUserDto | null>(null);
   const [organization, setOrganization] = useState<OrganizationDto | null>(null);
@@ -48,28 +52,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await requestAuthMe();
 
-      if (response.status < 200 || response.status >= 300) {
+      if (!response.ok) {
         logger.debug('No valid WorkOS session found', { status: response.status });
         setUser(null);
         setOrganization(null);
 
         // 403 is an account that may not use the app (suspended, or outside
-        // the allowlist): signed out, like an expired session.
-        if ((response.status === 401 || response.status === 403) && !isAuthPage() && !isBrandingPage()) {
+        // the allowlist): signed out, like an expired session. The landing
+        // page at / used to be excluded here too, but it mounts no providers
+        // ((marketing)/layout.tsx), so this never runs there.
+        if ((response.status === 401 || response.status === 403) && !isAuthPage()) {
           window.location.replace('/api/auth/logout');
         }
 
         return;
       }
 
-      const session = response.session;
-
-      if (!session) {
-        setUser(null);
-        setOrganization(null);
-
-        return;
-      }
+      const { session } = response;
 
       setUser(session.user);
       setOrganization(session.organization);
@@ -100,7 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     const handleStorageChange = (event: StorageEvent) => {
-      if (event.key === 'auth-logout-event' && event.newValue) {
+      if (event.key === LOGOUT_EVENT_KEY && event.newValue) {
         handleCrossTabLogout();
       }
     };
@@ -121,35 +120,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [loadUser]);
 
-  const signOut = useCallback(async () => {
+  // This used to sit inside a second try whose catch repeated the whole
+  // body. Only the storage write can throw (a private window, a full
+  // quota), and it has its own catch: a failure there costs the other tabs
+  // their notice, and this tab still leaves.
+  const signOut = useCallback(async (): Promise<never> => {
     try {
-      try {
-        const timestamp = Date.now().toString();
+      const timestamp = Date.now().toString();
 
-        localStorage.setItem('auth-logout-event', timestamp);
-        setTimeout(() => {
-          localStorage.removeItem('auth-logout-event');
-        }, 1000);
-      } catch (error) {
-        logger.warn('Failed to set logout event in localStorage', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-
-      setUser(null);
-      setOrganization(null);
-      setLoading(false);
-
-      window.location.assign('/api/auth/logout');
-      await new Promise<void>(() => {});
+      localStorage.setItem(LOGOUT_EVENT_KEY, timestamp);
+      setTimeout(() => {
+        localStorage.removeItem(LOGOUT_EVENT_KEY);
+      }, 1000);
     } catch (error) {
-      logger.error('Error during WorkOS sign out', error);
-      setUser(null);
-      setOrganization(null);
-      setLoading(false);
-      window.location.assign('/api/auth/logout');
-      await new Promise<void>(() => {});
+      logger.warn('Failed to set logout event in localStorage', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
+
+    setUser(null);
+    setOrganization(null);
+    setLoading(false);
+
+    window.location.assign('/api/auth/logout');
+
+    return new Promise<never>(() => {});
   }, []);
 
   const refreshUser = useCallback(async () => {

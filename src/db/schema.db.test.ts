@@ -108,9 +108,32 @@ describe('row level security', () => {
   it('is enabled on every table in public', async () => {
     const off = await rows<{ relname: string }>(sql`
       select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
-      where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity`);
+      where n.nspname = 'public' and c.relkind in ('r', 'p') and not c.relrowsecurity`);
 
     expect(off).toEqual([]);
+  });
+
+  // A materialized view is a copy of the rows taken by its owner: RLS never
+  // applies to reading it, and the default privileges make it readable by
+  // the app role. No policy can protect one.
+  it('has no materialized view in public', async () => {
+    const materialized = await rows<{ relname: string }>(sql`
+      select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and c.relkind = 'm'`);
+
+    expect(materialized).toEqual([]);
+  });
+
+  // A plain view reads its tables as the view's owner, which RLS does not
+  // bind, unless it is created `with (security_invoker = true)`: then the
+  // policies apply to whoever queries it.
+  it('runs every view in public as its caller', async () => {
+    const definer = await rows<{ relname: string }>(sql`
+      select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and c.relkind = 'v'
+        and not coalesce('security_invoker=true' = any(c.reloptions), false)`);
+
+    expect(definer).toEqual([]);
   });
 
   // Permissive policies are OR'ed. One extra policy `TO public` (which the
@@ -240,8 +263,70 @@ describe('tenantPolicy', () => {
 });
 
 describe('the app role', () => {
+  /**
+   * The table privileges the app role holds on public.<table>, in a fixed order.
+   * The list is every table privilege Postgres 18 knows, MAINTAIN (new in 17)
+   * included, so a grant nobody asked for shows up in the result.
+   */
+  async function appRolePrivileges(table: string): Promise<string[]> {
+    const held = await rows<{ privilege: string }>(sql`
+      select p.privilege
+      from (values (1, 'SELECT'), (2, 'INSERT'), (3, 'UPDATE'), (4, 'DELETE'), (5, 'TRUNCATE'), (6, 'REFERENCES'), (7, 'TRIGGER'), (8, 'MAINTAIN'))
+        as p(n, privilege)
+      where has_table_privilege('sculptors_app', ${`public.${table}`}::regclass, p.privilege)
+      order by p.n`);
+
+    return held.map((r) => r.privilege);
+  }
+
   it('can use the identity tables', async () => {
     await expect(t.asAppRole((tx) => tx.execute(sql`select count(*) from public.users`))).resolves.toBeDefined();
+  });
+
+  // The app marks identity rows inactive or deleted and never deletes one
+  // (0007). TRUNCATE skips row level security altogether, so it must never
+  // be granted either, nor MAINTAIN, which would let the app role take an
+  // ACCESS EXCLUSIVE lock on a table every request reads.
+  it('holds select, insert and update on the identity tables, nothing more', async () => {
+    for (const table of CONTROL_PLANE) {
+      expect(await appRolePrivileges(table), table).toEqual(['SELECT', 'INSERT', 'UPDATE']);
+    }
+  });
+
+  // What 0002's default privileges give a table a later migration creates:
+  // a tenant table needs DELETE, and still no TRUNCATE or MAINTAIN.
+  it('gets full DML but not TRUNCATE on a table created later', async () => {
+    await t.db.execute(sql`create table public.privilege_probe (id int primary key)`);
+
+    try {
+      expect(await appRolePrivileges('privilege_probe')).toEqual(['SELECT', 'INSERT', 'UPDATE', 'DELETE']);
+    } finally {
+      await t.db.execute(sql`drop table public.privilege_probe`);
+    }
+  });
+
+  // RLS does not bind a table's owner, or a role holding the owner through
+  // membership; instrumentation.ts refuses to boot on either.
+  it('owns no table in public', async () => {
+    const owned = await rows<{ relname: string }>(sql`
+      select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and c.relkind in ('r', 'p') and pg_has_role('sculptors_app', c.relowner, 'USAGE')`);
+
+    expect(owned).toEqual([]);
+  });
+
+  // ON DELETE CASCADE runs past row level security, so one delete here would
+  // take the organization's memberships, and later its tenant rows, with it.
+  it('cannot delete an organization', async () => {
+    await t.db.execute(sql`insert into organizations (id, name) values ('org_Undeletable', 'Undeletable')`);
+
+    expect(
+      await postgresError(t.asAppRole((tx) => tx.execute(sql`delete from public.organizations where id = 'org_Undeletable'`)))
+    ).toMatch(/permission denied for table organizations/);
+
+    const kept = await rows<{ id: string }>(sql`select id from organizations where id = 'org_Undeletable'`);
+
+    expect(kept).toEqual([{ id: 'org_Undeletable' }]);
   });
 
   it('cannot read the migration bookkeeping', async () => {

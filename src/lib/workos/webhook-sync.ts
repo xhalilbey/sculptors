@@ -33,12 +33,47 @@ import {
  * WorkOS before binding a session to that organization.
  */
 
+/**
+ * The keys of an event's data that are kept, when they hold a string: what
+ * the event touched and when. An allowlist, so what a user event carries
+ * (email, names, picture, metadata), what an authentication or session event
+ * carries (IP address, user agent), a one-time code or token, and any key a
+ * later SDK adds are never stored.
+ */
+const AUDIT_KEYS = ['object', 'id', 'organizationId', 'userId', 'status', 'updatedAt', 'createdAt'] as const;
+
+/**
+ * What of an event is kept for audit: its ids, status and times, and a
+ * membership's role as its slug. Always an object, because the column is
+ * NOT NULL. Until 24 Sep the whole of `event.data` was stored, forever, for
+ * every event, users the mirror never holds included.
+ */
+function auditPayload(event: Event): Record<string, unknown> {
+  const data: Record<string, unknown> = { ...event.data };
+  const kept: Record<string, unknown> = {};
+
+  for (const key of AUDIT_KEYS) {
+    const value = data[key];
+
+    if (typeof value === 'string') kept[key] = value;
+  }
+
+  const role = data.role;
+
+  if (typeof role === 'object' && role !== null && 'slug' in role && typeof role.slug === 'string') {
+    kept.role = role.slug;
+  }
+
+  return kept;
+}
+
 export function recordWebhookEvent(event: Event) {
   return webhookEventsRepository.record(identityDb(), {
     id: event.id,
     type: event.event,
-    // Kept for replay and audit, in the deserialized shape apply reads.
-    payload: { ...event.data },
+    // Ids and times, for audit. Nothing reads this copy back: a redelivery
+    // is applied again from the event WorkOS sends, never from what is here.
+    payload: auditPayload(event),
   });
 }
 
@@ -65,31 +100,46 @@ function deletedAt(event: Event): Date {
 }
 
 /**
+ * What applying one event did. `applied` means its writes ran; one older
+ * than what the mirror holds still changes nothing, by design (writes are
+ * ordered by workos_updated_at). Otherwise the reason it wrote nothing:
+ * 'not-handled' for an event we subscribe to but do not act on,
+ * 'malformed' for an id that is not the kind we expect or a field that is
+ * missing, and 'unknown-user' for a membership of a user we have never
+ * seen. Until 24 Sep each of these returned silently and the route marked
+ * the event processed, so a mirror that stopped following WorkOS left no
+ * trace in the log.
+ */
+export type WebhookOutcome =
+  | { applied: true }
+  | { applied: false; reason: 'not-handled' | 'malformed' | 'unknown-user' };
+
+/**
  * Apply one event. Events we subscribe to but do not act on are no-ops
  * (they are still recorded). Each event's writes form one transaction, so a
  * membership is never mirrored without the organization row its FK needs.
  */
-export async function applyWebhookEvent(event: Event): Promise<void> {
+export async function applyWebhookEvent(event: Event): Promise<WebhookOutcome> {
   switch (event.event) {
     case 'organization.created':
     case 'organization.updated': {
       const { id, name, updatedAt } = event.data;
 
-      if (!isOrganizationId(id) || !name) return;
+      if (!isOrganizationId(id) || !name) return { applied: false, reason: 'malformed' };
 
       await organizationsRepository.upsertNames(identityDb(), [{ id, name, workosUpdatedAt: new Date(updatedAt) }]);
 
-      return;
+      return { applied: true };
     }
 
     case 'organization.deleted': {
       const { id } = event.data;
 
-      if (!isOrganizationId(id)) return;
+      if (!isOrganizationId(id)) return { applied: false, reason: 'malformed' };
 
       await organizationsRepository.markDeleted(identityDb(), id, deletedAt(event));
 
-      return;
+      return { applied: true };
     }
 
     case 'organization_membership.created':
@@ -102,14 +152,16 @@ export async function applyWebhookEvent(event: Event): Promise<void> {
       const status = deleted ? 'inactive' : event.data.status;
       const workosUpdatedAt = deleted ? deletedAt(event) : new Date(event.data.updatedAt);
 
-      if (!isMembershipId(id) || !isOrganizationId(organizationId) || !workosUserId) return;
+      if (!isMembershipId(id) || !isOrganizationId(organizationId) || !workosUserId) {
+        return { applied: false, reason: 'malformed' };
+      }
 
-      await withIdentityTransaction(async (tx) => {
+      return withIdentityTransaction(async (tx) => {
         // The membership can only be mirrored for a user we have seen. One we
         // have not will be picked up by the sync at their first sign-in.
         const userId = await usersRepository.findIdByWorkOSUserId(tx, workosUserId);
 
-        if (!userId) return;
+        if (!userId) return { applied: false, reason: 'unknown-user' };
 
         // The organization row must exist for the FK; a membership event can
         // arrive before we have seen the organization by name.
@@ -120,15 +172,15 @@ export async function applyWebhookEvent(event: Event): Promise<void> {
         await membershipsRepository.upsertMany(tx, [
           { id, organizationId, userId, workosUserId, role: role?.slug ?? 'member', status, workosUpdatedAt },
         ]);
-      });
 
-      return;
+        return { applied: true };
+      });
     }
 
     case 'user.updated': {
       const { id: workosUserId, email, firstName, lastName, profilePictureUrl, updatedAt } = event.data;
 
-      if (!workosUserId) return;
+      if (!workosUserId) return { applied: false, reason: 'malformed' };
 
       await usersRepository.updateProfileByWorkOSUserId(
         identityDb(),
@@ -137,13 +189,13 @@ export async function applyWebhookEvent(event: Event): Promise<void> {
         new Date(updatedAt)
       );
 
-      return;
+      return { applied: true };
     }
 
     case 'user.deleted': {
       const workosUserId = event.data.id;
 
-      if (!workosUserId) return;
+      if (!workosUserId) return { applied: false, reason: 'malformed' };
 
       const at = deletedAt(event);
 
@@ -152,10 +204,10 @@ export async function applyWebhookEvent(event: Event): Promise<void> {
         await membershipsRepository.deactivateByWorkOSUserId(tx, workosUserId, at);
       });
 
-      return;
+      return { applied: true };
     }
 
     default:
-      return;
+      return { applied: false, reason: 'not-handled' };
   }
 }

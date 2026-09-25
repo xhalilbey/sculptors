@@ -1,4 +1,4 @@
-import type { Tone } from '@/components/charts/verdict';
+import type { DashboardTheme } from '@/hooks/use-dashboard-theme';
 
 /**
  * The dashboard's shared surfaces.
@@ -45,7 +45,7 @@ export const brandButton =
  * surface (--brand-face), which the owner asked for when the cards were
  * light (23 Sep 2026). White text on either keeps at least 5:1.
  */
-export const BLUE_BAND: Record<Tone, string> = {
+export const BLUE_BAND: Record<DashboardTheme, string> = {
   dark:
     'rounded-[14px] border border-[#6d82ff]/15 ' +
     'bg-[linear-gradient(180deg,rgba(67,89,239,0.22)_0%,rgba(67,89,239,0.08)_100%)] ' +
@@ -56,7 +56,7 @@ export const BLUE_BAND: Record<Tone, string> = {
 };
 
 /** The band's caption: muted on the translucent band, full white on the solid one. */
-export const BAND_CAPTION: Record<Tone, string> = {
+export const BAND_CAPTION: Record<DashboardTheme, string> = {
   dark: 'text-white/60',
   light: 'font-medium text-white',
 };

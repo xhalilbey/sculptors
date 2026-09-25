@@ -6,8 +6,11 @@ import {
   customRangeProblem,
   defaultGranularity,
   granularitiesFor,
+  hourNumber,
   hoursIn,
+  instantAt,
   isIsoDate,
+  MAX_CUSTOM_DAYS,
   periodOf,
   type RangeSelection,
 } from './time';
@@ -104,6 +107,21 @@ describe('granularities', () => {
     expect(defaultGranularity(periodOf({ preset: 'today' }, NOW))).toBe('hour');
     expect(defaultGranularity(periodOf({ preset: '30d' }, NOW))).toBe('day');
     expect(defaultGranularity(periodOf({ preset: '3m' }, NOW))).toBe('week');
+  });
+
+  // The two ladders are written separately; this holds them together, for
+  // every length a period can have, from one hour of Today to two years.
+  it('always offers the bucket size a period opens on', () => {
+    const start = hourNumber('2024-01-01T00:00:00Z');
+    const unoffered: number[] = [];
+
+    for (let hours = 1; hours <= MAX_CUSTOM_DAYS * 24; hours += 1) {
+      const period = { start: instantAt(start), end: instantAt(start + hours) };
+
+      if (!granularitiesFor(period).includes(defaultGranularity(period))) unoffered.push(hours);
+    }
+
+    expect(unoffered).toEqual([]);
   });
 });
 

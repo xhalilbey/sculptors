@@ -8,7 +8,33 @@ import { z } from 'zod';
  * access model: the owner's URL pasted into the app's slot (the owner bypasses
  * RLS), the direct host instead of the pooler (Cloud Run instances would each
  * hold real backends), or TLS without certificate verification.
+ *
+ * They must read the URL the way pg does, and pg reads more of it than
+ * `new URL()` shows. pg-connection-string copies every query parameter into
+ * the client config, over the URL's own parts and over the Pool options:
+ * `?user=` replaces the username, `?host=` the host, and `?options=` sets
+ * session settings at login (`-c statement_timeout=0` undoes the role's
+ * timeout). It also keeps the LAST of a repeated key, where
+ * `searchParams.get` returns the first, so
+ * `?sslmode=verify-full&sslmode=no-verify` read as verified here and
+ * connected without checking the certificate. A `socket:` URL connects to
+ * the Unix socket named by its path, whatever host it shows. And pg
+ * re-encodes a URL holding a space or a malformed escape (`%zz`) before
+ * parsing it, which leaves any escape with a hex letter undecoded:
+ * `?ssl%6Dode=verify-full` is sslmode to `searchParams` but an unknown key
+ * to pg, which then connects without TLS. Until 24 Sep 2026 each of those
+ * passed every check below. Now the scheme is pinned, a parameter may appear
+ * once, and only the TLS parameters are allowed, matched on the name as
+ * written, which no decoding changes: `channel_binding` for Neon's copied
+ * form (pg ignores it) and `sslrootcert`, which swaps the CAs verify-full
+ * trusts for one file but still checks the certificate and host name (the
+ * local Postgres the cloud sessions use needs it). An allowlist rather than
+ * a list of known overrides, because pg's options grow and each new one
+ * would be a way round a check.
  */
+
+const ALLOWED_SCHEMES = ['postgres:', 'postgresql:'];
+const ALLOWED_PARAMETERS = ['sslmode', 'channel_binding', 'sslrootcert'];
 
 function parseUrl(value: string): URL | null {
   try {
@@ -18,10 +44,28 @@ function parseUrl(value: string): URL | null {
   }
 }
 
+/**
+ * The query's parameter names as written, before any decoding, so an escaped
+ * name that pg might read undecoded never matches the allowlist. Values need
+ * no such care: pg verifies less only for sslmode=disable or no-verify, and
+ * an escape left in a value cannot spell either.
+ */
+function rawParameterNames(search: string): string[] {
+  return search
+    .slice(1)
+    .split('&')
+    .filter((pair) => pair !== '')
+    .map((pair) => pair.split('=', 1)[0] ?? '');
+}
+
 const schema = z.object({
   DATABASE_URL: z
     .string({ error: 'DATABASE_URL is not set' })
     .refine((value) => parseUrl(value) !== null, 'DATABASE_URL is not a URL')
+    .refine(
+      (value) => ALLOWED_SCHEMES.includes(parseUrl(value)?.protocol ?? ''),
+      'DATABASE_URL must use the postgres:// or postgresql:// scheme'
+    )
     .refine(
       (value) => parseUrl(value)?.hostname.includes('-pooler.') ?? false,
       'DATABASE_URL must use the Neon pooled host (-pooler.)'
@@ -35,6 +79,18 @@ const schema = z.object({
       // warns, and pg 9 will switch it to libpq's "encrypt, do not verify".
       (value) => parseUrl(value)?.searchParams.get('sslmode') === 'verify-full',
       'DATABASE_URL must carry sslmode=verify-full'
+    )
+    .refine((value) => {
+      const params = parseUrl(value)?.searchParams;
+
+      return Array.from(params?.keys() ?? []).every((key) => params?.getAll(key).length === 1);
+    }, 'DATABASE_URL must not repeat a query parameter')
+    .refine(
+      (value) =>
+        rawParameterNames(parseUrl(value)?.search ?? '').every((name) =>
+          ALLOWED_PARAMETERS.includes(name)
+        ),
+      'DATABASE_URL may carry only sslmode, channel_binding and sslrootcert'
     ),
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { monotonePath, niceScale } from './geometry';
+import { keyTarget, monotonePath, niceScale } from './geometry';
 
 /** Every y coordinate in a path, control points included. */
 function ysOf(path: string): number[] {
@@ -42,5 +42,44 @@ describe('niceScale', () => {
 
   it('gives an empty series an axis of its own', () => {
     expect(niceScale(0)).toEqual({ max: 1, ticks: [0] });
+  });
+});
+
+describe('keyTarget', () => {
+  it('sends Home to the first bucket and End to the last, even on the first press', () => {
+    expect(keyTarget('Home', null, 5)).toBe(0);
+    expect(keyTarget('End', null, 5)).toBe(4);
+    expect(keyTarget('Home', 3, 5)).toBe(0);
+    expect(keyTarget('End', 1, 5)).toBe(4);
+  });
+
+  it('shows the latest bucket on the first arrow press, in either direction', () => {
+    expect(keyTarget('ArrowLeft', null, 5)).toBe(4);
+    expect(keyTarget('ArrowRight', null, 5)).toBe(4);
+  });
+
+  it('steps one bucket with the arrows and stops at either end', () => {
+    expect(keyTarget('ArrowLeft', 2, 5)).toBe(1);
+    expect(keyTarget('ArrowRight', 2, 5)).toBe(3);
+    expect(keyTarget('ArrowLeft', 0, 5)).toBe(0);
+    expect(keyTarget('ArrowRight', 4, 5)).toBe(4);
+  });
+
+  it('clears on Escape, with or without a bucket in focus', () => {
+    expect(keyTarget('Escape', 2, 5)).toBe('clear');
+    expect(keyTarget('Escape', null, 5)).toBe('clear');
+    expect(keyTarget('Escape', null, 0)).toBe('clear');
+  });
+
+  it('moves nowhere on an empty chart', () => {
+    for (const key of ['ArrowLeft', 'ArrowRight', 'Home', 'End']) {
+      expect(keyTarget(key, null, 0)).toBeNull();
+    }
+  });
+
+  it('leaves every other key to the page', () => {
+    expect(keyTarget('Tab', 2, 5)).toBeNull();
+    expect(keyTarget('Enter', null, 5)).toBeNull();
+    expect(keyTarget('ArrowUp', 2, 5)).toBeNull();
   });
 });

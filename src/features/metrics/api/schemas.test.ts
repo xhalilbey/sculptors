@@ -71,4 +71,12 @@ describe('metricDetailQuerySchema', () => {
     expect(metricDetailQuerySchema.safeParse({ range: '7d', granularity: 'month' }).success).toBe(false);
     expect(metricDetailQuerySchema.safeParse({ range: 'today', granularity: 'day' }).success).toBe(false);
   });
+
+  // The bucket check would throw on a range without its days; it never sees one.
+  it('refuses a bad custom range before it weighs the bucket size', () => {
+    const result = metricDetailQuerySchema.safeParse({ range: 'custom', from: '2026-08-01', granularity: 'day' });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map((issue) => issue.path)).toEqual([['from']]);
+  });
 });

@@ -132,12 +132,28 @@ export async function updateProfileByWorkOSUserId(
     .where(and(eq(users.workosUserId, workosUserId), storedIsNotNewer(users.workosUpdatedAt, at)));
 }
 
-/** A user deleted in WorkOS at `at`. The stamp makes a late 'updated' from before it lose. */
+/**
+ * A user deleted in WorkOS at `at`: marked inactive, and the profile we
+ * cached is scrubbed. The row stays, because memberships and organizations
+ * reference it and the WorkOS id is still the identity; 'inactive' keeps
+ * sign-in refused. `email` is NOT NULL (and not unique), so it becomes an
+ * address under the reserved `.invalid` TLD (RFC 2606) that no mail can
+ * reach. The stamp makes a late 'updated' from before the deletion lose, so
+ * it cannot write the profile back. Until 24 Sep a deleted user's email and
+ * names were kept.
+ */
 export async function deactivateByWorkOSUserId(handle: IdentityDb, workosUserId: string, at: Date): Promise<void> {
   const db = unwrap(handle);
 
   await db
     .update(users)
-    .set({ status: 'inactive', workosUpdatedAt: at })
+    .set({
+      status: 'inactive',
+      email: `${workosUserId}@deleted.invalid`,
+      firstName: null,
+      lastName: null,
+      avatarUrl: null,
+      workosUpdatedAt: at,
+    })
     .where(and(eq(users.workosUserId, workosUserId), storedIsNotNewer(users.workosUpdatedAt, at)));
 }

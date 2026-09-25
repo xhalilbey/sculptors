@@ -1,69 +1,80 @@
-import { describe, expect, it } from 'vitest';
-import { getIdentifier } from './rate-limiter';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getIdentifier, RATE_LIMITS, rateLimit } from './rate-limiter';
 
 /**
  * The rate-limit key must not be attacker-controlled.
  *
- * X-Forwarded-For is append-only: every proxy appends the address it received
- * the request from. On Cloud Run the real client address is therefore the
- * RIGHTMOST entry, and everything to its left is whatever the client sent.
- * Reading the leftmost entry let a caller choose its own bucket by rotating
- * one header, which made the login limiter decorative.
+ * The address itself comes from clientIpFrom, whose tests (client-ip.test.ts)
+ * pin the rightmost-hop rule. Here: the key is that address under an 'ip:'
+ * prefix, and a request with no proxy header shares one 'ip:unknown' bucket.
+ * The limiter used to fall back to the `sub` of a Bearer token it never
+ * verified, which let a caller name its own bucket.
+ *
+ * The window is fixed: it opens at a key's first attempt and ends
+ * `windowMs` later, whatever happens inside it. The limit is admitted, the
+ * next attempt is refused until the window has ended, and the reset time
+ * reported (the middleware's Retry-After and X-RateLimit-Reset) is that
+ * end. The store is module-global, so each test spends its own key.
  */
 
-function requestWith(
-  headers: Record<string, string>,
-  ip?: string
-): Request & { ip?: string | null } {
-  return {
-    ip,
-    headers: new Headers(headers),
-  } as unknown as Request & { ip?: string | null };
+function requestWith(headers: Record<string, string>): Request {
+  return new Request('http://localhost:3000/api/organizations', { headers });
 }
 
 describe('getIdentifier', () => {
-  it('prefers the platform-provided address', () => {
-    const id = getIdentifier(
-      requestWith({ 'x-forwarded-for': '9.9.9.9' }, '203.0.113.5')
-    );
+  it('keys on the address our edge appended', () => {
+    const id = getIdentifier(requestWith({ 'x-forwarded-for': 'forged, 203.0.113.5' }));
 
     expect(id).toBe('ip:203.0.113.5');
   });
 
-  it('uses the rightmost X-Forwarded-For entry', () => {
-    const id = getIdentifier(
-      requestWith({ 'x-forwarded-for': '10.0.0.1, 203.0.113.5' })
-    );
+  it('puts a request with no proxy header in the shared unknown bucket, whatever token it carries', () => {
+    const payload = btoa(JSON.stringify({ sub: 'user_chosen_by_caller' }));
+    const id = getIdentifier(requestWith({ authorization: `Bearer header.${payload}.signature` }));
 
-    expect(id).toBe('ip:203.0.113.5');
+    expect(id).toBe('ip:unknown');
+  });
+});
+
+describe('rateLimit', () => {
+  const NOW = new Date('2026-09-24T12:00:00Z');
+  const { maxAttempts, windowMs } = RATE_LIMITS.AUTH_SUBMIT;
+
+  beforeEach(() => {
+    vi.useFakeTimers({ now: NOW });
   });
 
-  it('ignores a client-supplied prefix', () => {
-    // The attacker sends their own X-Forwarded-For; the edge appends the real
-    // address. Two requests forging different prefixes must land in the SAME
-    // bucket, or the limiter can be rotated away.
-    const first = getIdentifier(
-      requestWith({ 'x-forwarded-for': 'forged-a, 203.0.113.5' })
-    );
-    const second = getIdentifier(
-      requestWith({ 'x-forwarded-for': 'forged-b, 203.0.113.5' })
-    );
-
-    expect(first).toBe(second);
-    expect(first).toBe('ip:203.0.113.5');
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
-  it('tolerates padding and empty entries', () => {
-    const id = getIdentifier(
-      requestWith({ 'x-forwarded-for': ' 10.0.0.1 ,, 203.0.113.5 ,' })
-    );
+  it('admits max attempts per window, then refuses until it ends', () => {
+    const attempt = () => rateLimit('ip:198.51.100.1', 'window-test', 'AUTH_SUBMIT');
 
-    expect(id).toBe('ip:203.0.113.5');
+    for (let spent = 1; spent <= maxAttempts; spent += 1) {
+      expect(attempt()).toMatchObject({ allowed: true, remaining: maxAttempts - spent });
+    }
+
+    expect(attempt()).toMatchObject({ allowed: false, remaining: 0 });
+
+    vi.advanceTimersByTime(windowMs - 1);
+
+    expect(attempt()).toMatchObject({ allowed: false, remaining: 0 });
+
+    vi.advanceTimersByTime(2);
+
+    expect(attempt()).toMatchObject({ allowed: true, remaining: maxAttempts - 1 });
   });
 
-  it('falls back to x-real-ip when no forwarded chain is present', () => {
-    const id = getIdentifier(requestWith({ 'x-real-ip': '198.51.100.7' }));
+  it('reports the window end as resetTime', () => {
+    const attempt = () => rateLimit('ip:198.51.100.2', 'reset-test', 'AUTH_SUBMIT');
+    const first = attempt();
 
-    expect(id).toBe('ip:198.51.100.7');
+    vi.advanceTimersByTime(60 * 1000);
+
+    const later = attempt();
+
+    expect(first.resetTime).toBe(NOW.getTime() + windowMs);
+    expect(later.resetTime).toBe(first.resetTime);
   });
 });

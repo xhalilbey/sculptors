@@ -56,7 +56,7 @@ describe('GET /api/products, /api/customers and /api/orders', () => {
 
     for (const response of [productResponse, customerResponse, orderResponse]) {
       expect(response.status).toBe(200);
-      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(response.headers.get('cache-control')).toBe('private, no-store');
     }
 
     expect((await productResponse.json()).list.products).toHaveLength(36);

@@ -4,6 +4,7 @@ import {
   identityDb,
   usersRepository,
   type OrganizationId,
+  type UserId,
   type UserRow,
 } from '@/lib/identity';
 import { logger } from '@/lib/logger';
@@ -20,11 +21,7 @@ import {
 
 export { getWorkOSClient, getWorkOSEnv } from './client';
 export { clearWorkOSSessionCookie, setWorkOSSessionCookie } from './cookies';
-export {
-  WORKOS_SESSION_COOKIE,
-  WORKOS_SESSION_MAX_AGE,
-  WORKOS_STATE_COOKIE,
-} from './constants';
+export { WORKOS_SESSION_COOKIE } from './constants';
 
 /*
  * Sessions and organizations, v2.
@@ -40,7 +37,7 @@ export {
  * identity provider.
  *
  * Two paths use this module, and only the first writes:
- *   - SIGN-IN (lib/auth/sign-in.ts -> buildSessionContext): apply the
+ *   - SIGN-IN (lib/auth/sign-in.ts -> establishSignInSession): apply the
  *     allowlist, upsert the user, refuse one that is not active, mirror
  *     their memberships from WorkOS, create a first organization in WorkOS
  *     if they have none, and bind the session to an organization.
@@ -53,7 +50,8 @@ export {
 
 /** The signed-in user, as the server holds it. The wire shape is SessionUserDto (lib/workos/dto.ts). */
 export interface AppAuthUser {
-  id: string;
+  /** Our users.id, branded as the row carries it; the WorkOS id is workosUserId. */
+  id: UserId;
   workosUserId: string;
   email: string;
   firstName: string | null;
@@ -78,20 +76,6 @@ export interface SessionOrganization {
   isDefault: boolean;
 }
 
-export interface WorkOSSessionContext {
-  user: AppAuthUser;
-  /** The organization the session is bound to. */
-  organization: SessionOrganization;
-  organizations: SessionOrganization[];
-  workos: {
-    sessionId: string | null;
-    organizationId: string | null;
-    role: string | null;
-    roles: string[];
-    permissions: string[];
-  };
-}
-
 export type WorkOSUser = {
   id: string;
   email: string;
@@ -100,16 +84,6 @@ export type WorkOSUser = {
   profilePictureUrl?: string | null;
   /** ISO time of the WorkOS state this snapshot carries; orders the mirror write. */
   updatedAt?: string;
-};
-
-type SessionState = {
-  user: WorkOSUser;
-  sessionId: string | null;
-  organizationId: string | null;
-  role: string | null;
-  roles: string[];
-  permissions: string[];
-  sealedSession?: string;
 };
 
 /**
@@ -130,14 +104,14 @@ export function getAllowedWorkOSUserIds(): string[] {
   return Array.from(new Set(raw.split(',').map((value) => value.trim()).filter(Boolean)));
 }
 
-function isAllowedAccount(workosUserId: string) {
+/**
+ * Whether the account may sign in. Asked at sign-in and again on every
+ * request (lib/auth/session.ts), so a user taken off the list is out at once.
+ */
+export function isAllowedWorkOSUser(workosUserId: string) {
   const allowed = getAllowedWorkOSUserIds();
 
   return allowed.length > 0 && allowed.includes(workosUserId);
-}
-
-export function isAllowedWorkOSUser(workosUserId: string) {
-  return isAllowedAccount(workosUserId);
 }
 
 export class WorkOSAccountForbiddenError extends Error {
@@ -201,6 +175,23 @@ async function upsertUser(user: WorkOSUser): Promise<UserRow> {
 }
 
 /**
+ * A first organization's name: "<display name>'s Organization", the display
+ * name cut so the whole stays within the 100 code points a name may have.
+ * A long display name used to give WorkOS a name the mirror refused.
+ */
+function defaultOrganizationName(user: WorkOSUser): string {
+  const suffix = "'s Organization";
+  const owner = Array.from(
+    displayNameOf({ email: user.email, firstName: user.firstName ?? null, lastName: user.lastName ?? null })
+  )
+    .slice(0, 100 - suffix.length)
+    .join('')
+    .trimEnd();
+
+  return `${owner}${suffix}`;
+}
+
+/**
  * The user's organizations, from WorkOS (the authoritative list, taken at
  * every sign-in), mirrored, and guaranteed to be at least one.
  */
@@ -221,11 +212,7 @@ async function loadOrganizations(input: {
 
   if (memberships.length === 0) {
     await createOrganizationForUser({
-      name: `${displayNameOf({
-        email: workosUser.email,
-        firstName: workosUser.firstName ?? null,
-        lastName: workosUser.lastName ?? null,
-      })}'s Organization`,
+      name: defaultOrganizationName(workosUser),
       userId,
       workosUserId: workosUser.id,
     });
@@ -240,19 +227,26 @@ async function loadOrganizations(input: {
 }
 
 /**
- * Sign-in only (lib/auth/sign-in.ts): build the session context, binding
- * the session to an organization the user is actually in. Returns the
- * re-issued session when binding changed.
+ * Sign-in only (lib/auth/sign-in.ts): apply the allowlist, mirror the user
+ * and their memberships, and bind the session to an organization the user
+ * is actually in. `organizationId` is the one WorkOS issued the session for
+ * (null when unbound) and `sessionData` that sealed session. Returns the
+ * re-issued session when binding changed it, nothing when it was already
+ * bound to one of theirs.
+ *
+ * This used to be buildSessionContext and also assembled the user, their
+ * organizations and a block of WorkOS claims that its only caller threw
+ * away; the request path builds those from the mirror (resolveSession).
  */
-export async function buildSessionContext(
-  state: SessionState,
-  options: { sessionData?: string }
-): Promise<{ context: WorkOSSessionContext; refreshedSessionData?: string }> {
-  if (!isAllowedAccount(state.user.id)) {
+export async function establishSignInSession(
+  user: WorkOSUser,
+  options: { organizationId: string | null; sessionData: string }
+): Promise<{ refreshedSessionData?: string }> {
+  if (!isAllowedWorkOSUser(user.id)) {
     throw new WorkOSAccountForbiddenError();
   }
 
-  const userRow = await upsertUser(state.user);
+  const userRow = await upsertUser(user);
 
   // Before any WorkOS call: a suspended user gets no organization created
   // and no session bound.
@@ -262,7 +256,7 @@ export async function buildSessionContext(
 
   const memberships = await loadOrganizations({
     userId: userRow.id,
-    workosUser: state.user,
+    workosUser: user,
   });
 
   const [first] = memberships;
@@ -273,50 +267,16 @@ export async function buildSessionContext(
     throw new Error('Failed to establish an organization for the user');
   }
 
-  const bound = memberships.find((m) => m.organizationId === state.organizationId);
-  let active: MirroredMembership;
-  let refreshedSessionData: string | undefined;
-  let organizationId = state.organizationId;
-  let role = state.role;
-
-  if (bound) {
-    active = bound;
-  } else {
-    // The session is unbound (first sign-in) or bound to an organization the
-    // user has since left. Bind it to their first organization; WorkOS
-    // re-issues the session and is the one deciding whether that is allowed.
-    active = first;
-
-    if (options.sessionData) {
-      const refreshed = await refreshSessionForOrganization(
-        options.sessionData,
-        active.organizationId
-      );
-
-      refreshedSessionData = refreshed.sealedSession;
-      organizationId = refreshed.organizationId;
-      role = refreshed.role;
-    }
+  if (memberships.some((m) => m.organizationId === options.organizationId)) {
+    return {};
   }
 
-  const organizations = memberships.map((m) => toSessionOrganization(m, m === first));
-  const organization = toSessionOrganization(active, active === first);
+  // The session is unbound (first sign-in) or bound to an organization the
+  // user has since left. Bind it to their first organization; WorkOS
+  // re-issues the session and is the one deciding whether that is allowed.
+  const refreshed = await refreshSessionForOrganization(options.sessionData, first.organizationId);
 
-  return {
-    refreshedSessionData,
-    context: {
-      user: toAppUser(userRow),
-      organization,
-      organizations,
-      workos: {
-        sessionId: state.sessionId,
-        organizationId,
-        role,
-        roles: state.roles,
-        permissions: state.permissions,
-      },
-    },
-  };
+  return { refreshedSessionData: refreshed.sealedSession };
 }
 
 /**

@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server';
 import { commerceSource, getOrders, type OrdersResponse } from '@/features/commerce/server';
 import { defineRoute } from '@/lib/api/define-route';
 
@@ -10,6 +9,6 @@ export const GET = defineRoute({
     const board = await getOrders(commerceSource, { organizationId: ctx.tenant.organizationId, now: new Date() });
     const body: OrdersResponse = { success: true, board };
 
-    return NextResponse.json(body, { headers: { 'Cache-Control': 'no-store' } });
+    return body;
   },
 });

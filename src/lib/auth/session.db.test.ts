@@ -10,13 +10,23 @@ import type * as Organizations from '@/lib/workos/organizations';
  * Per-request session resolution against the real mirror (PGlite), with
  * WorkOS's session cookie mocked. What must hold: it writes nothing but a
  * throttled last_seen_at, it never lists memberships in WorkOS or creates an
- * organization, and a suspended user stays out.
+ * organization, and a suspended user stays out. A session bound to an
+ * organization the user has left is rebound from the newest seal it holds,
+ * and a user the mirror has never seen is not let in. At sign-in, an account
+ * outside the allowlist is refused before anything is written, a session
+ * issued for another organization is bound to one the user is in (one
+ * already bound to theirs is kept as issued), and the name a first
+ * organization is created with fits the 100 code points a name may have.
  */
 
 let t: TestDb;
 
 const authenticate = vi.fn();
 const refresh = vi.fn();
+// Spied, so a test can say which seal each refresh started from.
+const loadSealedSession = vi.fn((_options: { sessionData: string }) => ({ authenticate, refresh }));
+/** The sealed session each loadSealedSession call opened, in order. */
+const opened = () => loadSealedSession.mock.calls.map(([options]) => options.sessionData);
 
 // Every repository function, spied, so the test can say which ran.
 const writes = vi.hoisted(() => ({ called: [] as string[] }));
@@ -25,7 +35,7 @@ vi.mock('@/lib/logger', () => ({
   logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 vi.mock('@/lib/workos/client', () => ({
-  getWorkOSClient: () => ({ userManagement: { loadSealedSession: () => ({ authenticate, refresh }) } }),
+  getWorkOSClient: () => ({ userManagement: { loadSealedSession } }),
   getWorkOSEnv: () => ({ cookiePassword: 'x'.repeat(32), clientId: 'client_test', appUrl: 'http://localhost:3000' }),
 }));
 vi.mock('@/lib/identity', async (importOriginal) => {
@@ -90,6 +100,10 @@ beforeEach(() => {
   vi.stubEnv('SCULPTORS_ALLOWED_WORKOS_USER_IDS', 'user_req');
   authenticate.mockReset();
   refresh.mockReset();
+  // restoreMocks puts back vi.spyOn only; a vi.fn keeps its calls otherwise.
+  loadSealedSession.mockClear();
+  vi.mocked(organizations.listWorkOSMemberships).mockClear();
+  vi.mocked(organizations.createOrganizationForUser).mockClear();
   writes.called = [];
   authenticate.mockResolvedValue({ authenticated: true, user: { id: 'user_req' }, organizationId: 'org_REQ' });
 });
@@ -163,6 +177,51 @@ describe('resolveSession', () => {
   });
 });
 
+describe('resolveSession rebinding', () => {
+  it('rebinds a session for an organization the user left to one they are in', async () => {
+    authenticate.mockResolvedValue({ authenticated: true, user: { id: 'user_req' }, organizationId: 'org_LEFT' });
+    refresh.mockResolvedValue({ authenticated: true, sealedSession: 'sealed-rebound', organizationId: 'org_REQ' });
+
+    expect(await resolveSession('sealed', { refresh: true })).toMatchObject({
+      kind: 'ok',
+      organization: { id: 'org_REQ' },
+      refreshedSessionData: 'sealed-rebound',
+    });
+    expect(refresh.mock.calls).toEqual([[{ organizationId: 'org_REQ' }]]);
+  });
+
+  it('rebinds from the seal a refresh just issued, not the spent one in the cookie', async () => {
+    authenticate.mockResolvedValue({ authenticated: false, reason: 'invalid_jwt' });
+    refresh
+      .mockResolvedValueOnce({ authenticated: true, sealedSession: 'sealed-1', user: { id: 'user_req' }, organizationId: 'org_LEFT' })
+      .mockResolvedValueOnce({ authenticated: true, sealedSession: 'sealed-2', organizationId: 'org_REQ' });
+
+    expect(await resolveSession('sealed', { refresh: true })).toMatchObject({
+      kind: 'ok',
+      organization: { id: 'org_REQ' },
+      refreshedSessionData: 'sealed-2',
+    });
+    expect(opened()).toEqual(['sealed', 'sealed-1']);
+    expect(refresh.mock.calls).toEqual([[], [{ organizationId: 'org_REQ' }]]);
+  });
+
+  it('fails rather than answer for an organization WorkOS would not bind', async () => {
+    authenticate.mockResolvedValue({ authenticated: true, user: { id: 'user_req' }, organizationId: 'org_LEFT' });
+    refresh.mockResolvedValue({ authenticated: false });
+
+    await expect(resolveSession('sealed', { refresh: true })).rejects.toThrow('WorkOS refused to switch organization');
+  });
+
+  it('does not let in an allowlisted user the mirror has never seen, and creates no row', async () => {
+    vi.stubEnv('SCULPTORS_ALLOWED_WORKOS_USER_IDS', 'user_req,user_unknown');
+    authenticate.mockResolvedValue({ authenticated: true, user: { id: 'user_unknown' }, organizationId: 'org_REQ' });
+
+    expect(await resolveSession('sealed', { refresh: true })).toEqual({ kind: 'expired', cookieInvalid: false });
+    expect(writes.called).toEqual(['users.findByWorkOSUserId']);
+    expect(refresh).not.toHaveBeenCalled();
+  });
+});
+
 describe('a GET through defineRoute', () => {
   it('never lists memberships in WorkOS, syncs them or creates an organization', async () => {
     const handler = vi.fn().mockResolvedValue({ ok: true });
@@ -197,22 +256,15 @@ describe('a GET through defineRoute', () => {
 
 describe('sign-in for a suspended user', () => {
   it('is refused before any WorkOS listing or organization creation, and stays suspended', async () => {
-    const { AccountInactiveError, buildSessionContext } = await import('@/lib/workos/auth');
+    const { AccountInactiveError, establishSignInSession } = await import('@/lib/workos/auth');
 
     await t.db.execute(sql`update users set status = 'suspended' where id = ${USER}`);
 
     try {
       await expect(
-        buildSessionContext(
-          {
-            user: { id: 'user_req', email: 'req@example.com', updatedAt: '2026-09-23T00:00:00.000Z' },
-            sessionId: null,
-            organizationId: null,
-            role: null,
-            roles: [],
-            permissions: [],
-          },
-          { sessionData: 'sealed' }
+        establishSignInSession(
+          { id: 'user_req', email: 'req@example.com', updatedAt: '2026-09-23T00:00:00.000Z' },
+          { organizationId: null, sessionData: 'sealed' }
         )
       ).rejects.toBeInstanceOf(AccountInactiveError);
       expect(organizations.listWorkOSMemberships).not.toHaveBeenCalled();
@@ -221,5 +273,134 @@ describe('sign-in for a suspended user', () => {
     } finally {
       await t.db.execute(sql`update users set status = 'active' where id = ${USER}`);
     }
+  });
+});
+
+describe('sign-in session binding', () => {
+  const STRANGER = { id: 'user_stranger', email: 'stranger@example.com', updatedAt: '2026-09-24T00:00:00.000Z' };
+
+  beforeEach(() => {
+    // Only the list decides here: an owner id left in the environment would widen it.
+    vi.stubEnv('SCULPTORS_OWNER_WORKOS_USER_ID', undefined);
+  });
+
+  it('refuses an account outside the allowlist before writing anything', async () => {
+    const { establishSignInSession, WorkOSAccountForbiddenError } = await import('@/lib/workos/auth');
+
+    vi.stubEnv('SCULPTORS_ALLOWED_WORKOS_USER_IDS', 'user_other');
+
+    await expect(
+      establishSignInSession(STRANGER, { organizationId: null, sessionData: 'sealed' })
+    ).rejects.toBeInstanceOf(WorkOSAccountForbiddenError);
+    expect(writes.called).toEqual([]);
+    expect(organizations.listWorkOSMemberships).not.toHaveBeenCalled();
+    expect(organizations.createOrganizationForUser).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+    expect((await t.db.execute(sql`select id from users where workos_user_id = 'user_stranger'`)).rows).toEqual([]);
+  });
+
+  it('binds a session issued for another organization to one the user is in', async () => {
+    const { establishSignInSession } = await import('@/lib/workos/auth');
+
+    vi.mocked(organizations.listWorkOSMemberships).mockResolvedValueOnce([
+      {
+        id: 'om_REQ',
+        organizationId: 'org_REQ',
+        organizationName: 'Req Org',
+        userId: 'user_req',
+        status: 'active',
+        role: { slug: 'admin' },
+        updatedAt: '2026-09-24T00:00:00.000Z',
+      },
+    ]);
+    refresh.mockResolvedValue({ authenticated: true, sealedSession: 'sealed-rebound', organizationId: 'org_REQ', role: 'admin' });
+
+    const established = await establishSignInSession(
+      { id: 'user_req', email: 'req@example.com', firstName: 'Req', updatedAt: '2026-09-24T00:00:00.000Z' },
+      { organizationId: 'org_OTHER', sessionData: 'sealed' }
+    );
+
+    expect(established.refreshedSessionData).toBe('sealed-rebound');
+    expect(opened()).toEqual(['sealed']);
+    expect(refresh.mock.calls).toEqual([[{ organizationId: 'org_REQ' }]]);
+    expect(organizations.createOrganizationForUser).not.toHaveBeenCalled();
+  });
+
+  it('keeps a session already bound to an organization the user is in, without asking workos again', async () => {
+    const { establishSignInSession } = await import('@/lib/workos/auth');
+
+    vi.mocked(organizations.listWorkOSMemberships).mockResolvedValueOnce([
+      {
+        id: 'om_REQ',
+        organizationId: 'org_REQ',
+        organizationName: 'Req Org',
+        userId: 'user_req',
+        status: 'active',
+        role: { slug: 'admin' },
+        updatedAt: '2026-09-24T00:00:00.000Z',
+      },
+    ]);
+
+    const established = await establishSignInSession(
+      { id: 'user_req', email: 'req@example.com', firstName: 'Req', updatedAt: '2026-09-24T00:00:00.000Z' },
+      { organizationId: 'org_REQ', sessionData: 'sealed' }
+    );
+
+    expect(established).toEqual({});
+    expect(loadSealedSession).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('answers a completed sign-in outside the allowlist as forbidden', async () => {
+    const { completeSignIn } = await import('@/lib/auth/sign-in');
+    const authenticateAtWorkOS = vi.fn().mockResolvedValue({
+      user: STRANGER,
+      accessToken: 'access',
+      refreshToken: 'refresh',
+      sealedSession: 'sealed-stranger',
+    });
+
+    expect(await completeSignIn(authenticateAtWorkOS, { ipAddress: null, userAgent: null })).toEqual({ kind: 'forbidden' });
+    expect(writes.called).toEqual([]);
+  });
+});
+
+describe('sign-in for a user with no organization yet', () => {
+  const SUFFIX = "'s Organization";
+
+  /**
+   * Signs a new user in with no WorkOS memberships and returns the name the
+   * first organization would be created with. The creation is refused, so
+   * WorkOS is never called.
+   */
+  async function firstOrganizationName(user: { id: string; firstName: string; lastName?: string }): Promise<string> {
+    const { establishSignInSession } = await import('@/lib/workos/auth');
+
+    vi.stubEnv('SCULPTORS_ALLOWED_WORKOS_USER_IDS', user.id);
+    vi.mocked(organizations.listWorkOSMemberships).mockResolvedValueOnce([]);
+    vi.mocked(organizations.createOrganizationForUser).mockRejectedValueOnce(new Error('not created in this test'));
+
+    await expect(
+      establishSignInSession(
+        { ...user, email: `${user.id}@example.com`, updatedAt: '2026-09-23T00:00:00.000Z' },
+        { organizationId: null, sessionData: 'sealed' }
+      )
+    ).rejects.toThrow('not created in this test');
+
+    return vi.mocked(organizations.createOrganizationForUser).mock.lastCall?.[0].name ?? '';
+  }
+
+  it('cuts a long display name by code points, so the name WorkOS gets is exactly 100', async () => {
+    // 120 emoji are 240 UTF-16 units: a cut by units would split a pair.
+    const name = await firstOrganizationName({ id: 'user_long_emoji', firstName: '\u{1F600}'.repeat(120) });
+
+    expect(name).toBe(`${'\u{1F600}'.repeat(100 - SUFFIX.length)}${SUFFIX}`);
+    expect(Array.from(name)).toHaveLength(100);
+  });
+
+  it('leaves no space before the suffix when the cut falls just after one', async () => {
+    const name = await firstOrganizationName({ id: 'user_long_space', firstName: 'x'.repeat(84), lastName: 'Long'.repeat(10) });
+
+    expect(name).toBe(`${'x'.repeat(84)}${SUFFIX}`);
   });
 });

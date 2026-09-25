@@ -9,7 +9,8 @@ import { parseUserId } from '@/types/ids';
 /**
  * syncMembershipsForUser against the real schema. The property that matters
  * most is new with Neon: the sync is one transaction, so a failure leaves
- * the mirror as it was rather than half updated.
+ * the mirror as it was rather than half updated. findMembership is pinned
+ * here too: a malformed id is "no membership", a database failure throws.
  */
 
 let t: TestDb;
@@ -85,13 +86,28 @@ describe('syncMembershipsForUser', () => {
         userId: USER,
         workosUserId: 'user_sync',
         listedAt: LISTED_AT,
-        // A name the CHECK constraint refuses fails the organizations step;
-        // the retirement of om_S2 that would follow must not happen either.
-        memberships: [workos('om_S3', 'org_S3', 'x'.repeat(101))],
+        // A status the CHECK constraint refuses (what an API change would
+        // look like) fails the memberships step after org_S3 was written;
+        // that row, and the retirement of om_S2 that would follow, must not
+        // survive. This used to be a 101-character name, which the mirror
+        // now stores cut to 100.
+        memberships: [{ ...workos('om_S3', 'org_S3', 'Three'), status: 'banana' as 'active' }],
       })
     ).rejects.toThrow('Failed to load organizations');
 
     expect((await t.db.execute(sql`select id, status from organization_memberships order by id`)).rows).toEqual(before);
+    expect((await t.db.execute(sql`select id from organizations where id = 'org_S3'`)).rows).toEqual([]);
+  });
+
+  it('mirrors a name longer than the table holds instead of failing the sign-in', async () => {
+    const listed = await syncMembershipsForUser({
+      userId: USER,
+      workosUserId: 'user_sync',
+      listedAt: LISTED_AT,
+      memberships: [workos('om_S2', 'org_S2', 'Two renamed'), workos('om_S7', 'org_S7', 'y'.repeat(150))],
+    });
+
+    expect(listed.find((m) => m.id === 'om_S7')?.organization.name).toBe('y'.repeat(100));
   });
 
   it('does not revive a membership deleted after the snapshot it syncs', async () => {
@@ -180,8 +196,43 @@ describe('syncMembershipsForUser', () => {
     expect(listed.map((m) => m.id)).toEqual(expect.arrayContaining(['om_P1', 'om_P2']));
   });
 
+  it('mirrors a membership WorkOS re-created with a new id', async () => {
+    await t.db.execute(sql`insert into organizations (id, name) values ('org_S6', 'Six') on conflict do nothing`);
+    // The member was removed (om_S6old deactivated), then added again, and
+    // WorkOS gave the new membership a new id. The sign-in sync used to fail
+    // here on the (organization, user) key, so the user could not sign in.
+    await t.db.execute(sql`insert into organization_memberships (id, organization_id, user_id, workos_user_id, status, workos_updated_at)
+      values ('om_S6old', 'org_S6', ${USER}, 'user_sync', 'inactive', '2026-09-22T00:00:00Z')`);
+
+    const listed = await syncMembershipsForUser({
+      userId: USER,
+      workosUserId: 'user_sync',
+      listedAt: new Date('2026-09-22T13:00:00Z'),
+      memberships: [workos('om_S6new', 'org_S6', 'Six', '2026-09-22T12:00:00.000Z')],
+    });
+
+    expect(listed.map((m) => m.id)).toEqual(['om_S6new']);
+    expect((await t.db.execute(sql`select id, status from organization_memberships where organization_id = 'org_S6'`)).rows).toEqual([
+      { id: 'om_S6new', status: 'active' },
+    ]);
+  });
+
   it('answers null for malformed ids instead of querying', async () => {
     expect(await findMembership(USER, "org_S2' or '1'='1")).toBeNull();
     expect(await findMembership('not-a-uuid', 'org_S2')).toBeNull();
+  });
+});
+
+describe('findMembership', () => {
+  it('lets a database failure through instead of answering "no membership"', async () => {
+    // A table the query cannot find is as real a failure as an unreachable
+    // database, and it is put back whatever the assertion does.
+    await t.db.execute(sql`alter table organization_memberships rename to organization_memberships_away`);
+
+    try {
+      await expect(findMembership(USER, 'org_S2')).rejects.toThrow();
+    } finally {
+      await t.db.execute(sql`alter table organization_memberships_away rename to organization_memberships`);
+    }
   });
 });

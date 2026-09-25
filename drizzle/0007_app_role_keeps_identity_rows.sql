@@ -1,0 +1,13 @@
+-- Custom migration: the app role keeps the identity rows it writes.
+--
+-- 0002 granted DELETE on every table, yet the app never deletes an identity
+-- row: a user WorkOS deleted is marked inactive, an organization is marked
+-- deleted, a membership WorkOS no longer lists is retired, and a webhook
+-- event is kept as the log. A DELETE on organizations would also cascade
+-- (ON DELETE CASCADE) into its memberships, and later into every tenant
+-- table keyed to it, where the cascade runs past row level security. A purge,
+-- if one is ever needed, runs as the owner.
+--
+-- The default privileges from 0002 stay as they are: tenant tables created
+-- later still get DELETE, which their rows need.
+revoke delete on table users, organizations, organization_memberships, workos_webhook_events from sculptors_app;

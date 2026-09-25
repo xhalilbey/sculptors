@@ -76,10 +76,16 @@ Set these in `.env.local`, except the owner's two, which go in
 the owner role bypasses row level security, so the app process must never
 hold it; the app refuses to start if either is in its environment.
 `.env.example` and `.env.migrate.example` list every name the code reads, one
-file per destination (names only; never commit values). `NEXT_PUBLIC_*`
-values are inlined by Next.js at BUILD time, into the server bundle as well
-as the browser's: changing one in Cloud Run without rebuilding the image
-changes nothing. Keys nothing reads any more were moved to
+file per destination (names only; never commit values). Next.js inlines a
+`NEXT_PUBLIC_*` value into the bundles only when the build has it set, and
+the Docker build never does (the Dockerfile declares no `ARG`, and
+`.dockerignore` drops `.env*`). A value the browser reads
+(`NEXT_PUBLIC_LANDING_HERO_VARIANT`) is therefore fixed at build time, and
+this Dockerfile has no way to pass one in. `NEXT_PUBLIC_APP_URL` is read
+only on the server and in the middleware, so the image takes it from the
+Cloud Run service's environment: set it there to the public origin exactly
+(`https://`, host, no path, no trailing slash), and a new revision picks up
+a change without a rebuild. Keys nothing reads any more were moved to
 `.env.archive.local` (ignored, not loaded by Next.js).
 
 | Variable | Purpose |
@@ -91,11 +97,28 @@ changes nothing. Keys nothing reads any more were moved to
 | `WORKOS_WEBHOOK_SECRET` | Verifies WorkOS webhook signatures |
 | `SCULPTORS_ALLOWED_WORKOS_USER_IDS` | Comma-separated sign-in allowlist |
 | `SCULPTORS_OWNER_WORKOS_USER_ID` | Legacy single-user allowlist entry, still honoured |
-| `NEXT_PUBLIC_APP_URL` | The app's origin, for same-origin checks and redirects |
-| `DATABASE_URL` | Neon pooled host (`-pooler`), user `sculptors_app`, `sslmode=verify-full`; the only URL the app reads |
+| `NEXT_PUBLIC_APP_URL` | The app's origin (scheme, host and port), for same-origin checks and redirects; required in production, `http://localhost:3002` elsewhere when unset |
+| `DATABASE_URL` | Neon pooled host (`-pooler`), user `sculptors_app`, `sslmode=verify-full`; the only URL the app reads. `postgres://` or `postgresql://` only, and the query may carry only `sslmode`, `channel_binding` and `sslrootcert`, each once: any other parameter (`application_name`, `options`, ...) or a repeated one refuses to boot |
 | `DATABASE_URL_UNPOOLED` | `.env.migrate.local` only. Neon direct host as the owner; read only by `npm run db:migrate` |
 | `NEON_API_KEY` | `.env.migrate.local` only. Neon API, for provisioning scripts; never read by the app |
 | `NEXT_PUBLIC_LANDING_HERO_VARIANT` | Optional landing hero variant |
+| `GOOGLE_CLOUD_PROJECT` | Optional; the Google Cloud project id, so a route's log lines name their request's trace in full (`projects/<id>/traces/<trace>`), the form Cloud Logging links to the trace; unset, they carry the bare trace id. Cloud Run does not set it |
+
+## Deploy
+
+The image must be reached on Cloud Run directly, through its `run.app` URL
+or a Cloud Run domain mapping. The client address is the rightmost
+`X-Forwarded-For` entry, the one Cloud Run appends
+(`src/lib/security/client-ip.ts`); it keys the sign-in budget and the API
+budget (100 requests per path per minute), and is the address WorkOS
+receives with each sign-in. Behind an external load balancer, Firebase
+Hosting or a CDN, that entry would be the proxy's own address for every
+user: ten sign-in posts from anyone would lock everyone out of sign-in on
+that instance for up to 15 minutes, every user would share each API path's
+100 requests a minute, and WorkOS would see one address for all of them.
+Before such a proxy goes in front, `clientIpFrom` has to skip that many
+entries from the right (`docs/DECISIONS.md`, "The client address is the
+rightmost forwarded hop, everywhere"). No setting changes this.
 
 ## Commands
 
@@ -113,9 +136,13 @@ npm run db:check       # migration journal consistency
 npm run verify         # typecheck + lint + check:routes + db:check + test
 ```
 
-CI (`.github/workflows/ci.yml`) runs typecheck, lint, route guards, the
-migration drift check, tests and build on every push to `main` and every pull
-request. It never connects to Neon.
+CI (`.github/workflows/ci.yml`) audits the runtime dependencies
+(`npm audit --omit=dev --audit-level=high`), then runs typecheck, lint,
+route guards, the migration drift check, tests and build on every push to
+`main` and every pull request. It never connects to Neon. A new high or
+critical advisory in a runtime dependency fails CI with no code change,
+until the package is upgraded or the advisory is accepted in
+`docs/DECISIONS.md` with a matching change to the gate.
 
 ## Layout
 

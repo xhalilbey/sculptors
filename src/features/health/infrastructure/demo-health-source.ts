@@ -5,6 +5,7 @@ import {
   dayNumber,
   type ComponentKey,
   type Incident,
+  type IncidentImpact,
   type IncidentUpdate,
   type IsoDate,
 } from '../domain/system';
@@ -105,7 +106,7 @@ function minuteInstant(day: number, minute: number): string {
 
 interface DayIncident {
   component: ComponentKey;
-  impact: 'minor' | 'major';
+  impact: IncidentImpact;
   startMinute: number;
   durationMinutes: number;
 }

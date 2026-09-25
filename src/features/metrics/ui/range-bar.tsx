@@ -4,7 +4,7 @@ import { CalendarDays } from 'lucide-react';
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from 'react';
 import { brandButton } from '@/components/ui/surfaces';
 import { cn } from '@/lib/utils';
-import { customRangeProblem, type IsoDate, type RangeSelection } from '../domain/time';
+import { customRangeProblem, dateOf, type IsoDate, type RangeSelection } from '../domain/time';
 import { formatDays } from './format';
 import { PRESET_OPTIONS } from './ranges';
 
@@ -14,7 +14,7 @@ const noSubscription = () => () => undefined;
 function useToday(): IsoDate | null {
   return useSyncExternalStore(
     noSubscription,
-    () => new Date().toISOString().slice(0, 10),
+    () => dateOf(new Date()),
     () => null
   );
 }

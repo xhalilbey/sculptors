@@ -7,7 +7,9 @@ import { parseOrganizationId } from '@/types/ids';
 /**
  * A resource check runs inside withTenant: the transaction it is handed has
  * app.organization_id set to the tenant defineRoute authorized, which is
- * what every tenant table's RLS policy compares against.
+ * what every tenant table's RLS policy compares against. Only a tenant
+ * table's: an identity table shows the app role every organization there
+ * too, so a check that reads one must filter by the tenant itself.
  */
 
 let t: TestDb;
@@ -53,5 +55,31 @@ describe('runResourceCheck', () => {
     );
 
     expect(rows[0]?.setting ?? null).toBeNull();
+  });
+
+  it('leaves a control-plane table unscoped, so a check that reads one filters by the tenant itself', async () => {
+    await t.db.execute(
+      sql`insert into public.organizations (id, name) values ('org_TENANT', 'Tenant'), ('org_OTHER', 'Other')`
+    );
+
+    const unfiltered = defineResourceCheck<{ id: string }>(async (tenant, input) => {
+      const { rows } = await tenant.tx.execute(sql`select id from public.organizations where id = ${input.id}`);
+
+      return rows.length > 0;
+    });
+    const filtered = defineResourceCheck<{ id: string }>(async (tenant, input) => {
+      const { rows } = await tenant.tx.execute(
+        sql`select id from public.organizations where id = ${input.id} and id = ${tenant.organizationId}`
+      );
+
+      return rows.length > 0;
+    });
+    // What runResourceCheck does, but as the app role: PGlite connects as a
+    // superuser, which ignores RLS.
+    const runForTenant = (check: typeof unfiltered) =>
+      t.asTenant(parseOrganizationId('org_TENANT'), (tenant) => check.run(tenant, { id: 'org_OTHER' }));
+
+    expect(await runForTenant(unfiltered)).toBe(true);
+    expect(await runForTenant(filtered)).toBe(false);
   });
 });

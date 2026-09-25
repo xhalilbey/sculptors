@@ -3,11 +3,12 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createTestDb, type TestDb } from '@/db/testing/pglite';
 import type * as Identity from '@/lib/identity';
 import { wrap, type IdentityDb } from '@/lib/identity/internal/handle';
-import { event, membership, organization, user } from './webhook-events.test-utils';
+import { AT, event, membership, organization, user } from './webhook-events.test-utils';
 
 /**
  * The webhook's apply step against the real schema: what each event writes,
- * and that the events it must ignore write nothing.
+ * and that the events it must ignore write nothing. The record step keeps
+ * an event's ids and times, never a profile, and a deleted user keeps none.
  */
 
 let t: TestDb;
@@ -40,6 +41,10 @@ async function one<T>(query: ReturnType<typeof sql>): Promise<T | undefined> {
   return (await t.db.execute(query)).rows[0] as T | undefined;
 }
 
+async function storedPayload(eventId: string): Promise<unknown> {
+  return (await one<{ payload: unknown }>(sql`select payload from workos_webhook_events where id = ${eventId}`))?.payload;
+}
+
 describe('applyWebhookEvent', () => {
   it('mirrors organization names without touching our own fields', async () => {
     await applyWebhookEvent(event('organization.created', 'e1', organization({ id: 'org_W1', name: 'First' })));
@@ -47,6 +52,18 @@ describe('applyWebhookEvent', () => {
     await applyWebhookEvent(event('organization.updated', 'e2', organization({ id: 'org_W1', name: 'Second' })));
 
     expect(await one(sql`select name, plan from organizations where id = 'org_W1'`)).toEqual({ name: 'Second', plan: 'pro' });
+  });
+
+  it('records and mirrors a name the table could not hold instead of failing every retry', async () => {
+    const renamed = event('organization.updated', 'e2b', organization({ id: 'org_W1b', name: `Acme\u{0} ${'x'.repeat(150)}` }));
+
+    // In the route's order: recording the NUL used to throw before apply ran.
+    expect(await recordWebhookEvent(renamed)).toBe('recorded');
+    await applyWebhookEvent(renamed);
+
+    expect(await one(sql`select name from organizations where id = 'org_W1b'`)).toEqual({ name: `Acme ${'x'.repeat(95)}` });
+    // The record keeps the organization's id and times, not its name.
+    expect(await storedPayload('e2b')).toEqual({ object: 'organization', id: 'org_W1b', createdAt: AT, updatedAt: AT });
   });
 
   it('soft deletes an organization', async () => {
@@ -57,13 +74,15 @@ describe('applyWebhookEvent', () => {
   });
 
   it('mirrors a membership for a known user, creating a placeholder organization', async () => {
-    await applyWebhookEvent(
+    const created = await applyWebhookEvent(
       event(
         'organization_membership.created',
         'e5',
         membership({ id: 'om_W1', organizationId: 'org_W3', userId: 'user_known', role: 'admin' })
       )
     );
+
+    expect(created).toEqual({ applied: true });
 
     expect(await one(sql`select role, status from organization_memberships where id = 'om_W1'`)).toEqual({
       role: 'admin',
@@ -91,19 +110,45 @@ describe('applyWebhookEvent', () => {
   });
 
   it('ignores a membership for a user it has never seen, and malformed ids', async () => {
-    await applyWebhookEvent(
+    const unknownUser = await applyWebhookEvent(
       event('organization_membership.created', 'e7', membership({ id: 'om_W2', organizationId: 'org_W4', userId: 'user_unknown' }))
     );
-    await applyWebhookEvent(
+    const malformedMembership = await applyWebhookEvent(
       event(
         'organization_membership.created',
         'e8',
         membership({ id: 'not_a_membership', organizationId: 'org_W4', userId: 'user_known' })
       )
     );
+    const malformedOrganization = await applyWebhookEvent(
+      event('organization.updated', 'e8b', organization({ id: 'not_an_organization', name: 'Nobody' }))
+    );
 
+    // Each says why it changed nothing, for the route to log.
+    expect(unknownUser).toEqual({ applied: false, reason: 'unknown-user' });
+    expect(malformedMembership).toEqual({ applied: false, reason: 'malformed' });
+    expect(malformedOrganization).toEqual({ applied: false, reason: 'malformed' });
     expect(await one(sql`select count(*)::int as n from organization_memberships where organization_id = 'org_W4'`)).toEqual({ n: 0 });
-    expect(await one(sql`select count(*)::int as n from organizations where id = 'org_W4'`)).toEqual({ n: 0 });
+    expect(await one(sql`select count(*)::int as n from organizations where id in ('org_W4', 'not_an_organization')`)).toEqual({ n: 0 });
+  });
+
+  it('says it does not act on an event it is not built for', async () => {
+    const session = event('session.created', 'e8c', {
+      object: 'session',
+      id: 'session_W1',
+      userId: 'user_known',
+      ipAddress: '203.0.113.7',
+      userAgent: 'Mozilla/5.0',
+      organizationId: 'org_W4',
+      authMethod: 'password',
+      status: 'active',
+      expiresAt: AT,
+      endedAt: null,
+      createdAt: AT,
+      updatedAt: AT,
+    });
+
+    expect(await applyWebhookEvent(session)).toEqual({ applied: false, reason: 'not-handled' });
   });
 
   it('updates a profile without letting null erase it, and deactivates on delete', async () => {
@@ -137,6 +182,24 @@ describe('applyWebhookEvent', () => {
 
     expect(await one(sql`select avatar_url from users where workos_user_id = 'user_known'`)).toEqual({
       avatar_url: 'https://example.com/a.png',
+    });
+  });
+
+  it("scrubs a deleted user's profile, keeping the row inactive", async () => {
+    await t.db.execute(sql`insert into users (id, workos_user_id, email, first_name, last_name, avatar_url)
+      values ('00000000-0000-4000-8000-0000000000a2', 'user_scrub', 'scrub@example.com', 'Scrub', 'Me', 'https://example.com/s.png')`);
+
+    await applyWebhookEvent(event('user.deleted', 'e11b', user({ id: 'user_scrub', email: 'scrub@example.com', firstName: 'Scrub' })));
+
+    expect(
+      await one(sql`select id, email, first_name, last_name, avatar_url, status from users where workos_user_id = 'user_scrub'`)
+    ).toEqual({
+      id: '00000000-0000-4000-8000-0000000000a2',
+      email: 'user_scrub@deleted.invalid',
+      first_name: null,
+      last_name: null,
+      avatar_url: null,
+      status: 'inactive',
     });
   });
 
@@ -195,6 +258,23 @@ describe('applyWebhookEvent, delivered out of order', () => {
     });
   });
 
+  it("does not restore a deleted user's profile from a late user.updated older than the deletion", async () => {
+    await t.db.execute(sql`insert into users (workos_user_id, email, first_name)
+      values ('user_order_gone', 'gone@example.com', 'Gone')`);
+
+    await applyWebhookEvent(event('user.deleted', 'o10', user({ id: 'user_order_gone', updatedAt: T1 }), T2));
+    // The change WorkOS made at t1, delivered after the deletion.
+    await applyWebhookEvent(
+      event('user.updated', 'o11', user({ id: 'user_order_gone', email: 'late@example.com', firstName: 'Late', updatedAt: T1 }), T1)
+    );
+
+    expect(await one(sql`select email, first_name, status from users where workos_user_id = 'user_order_gone'`)).toEqual({
+      email: 'user_order_gone@deleted.invalid',
+      first_name: null,
+      status: 'inactive',
+    });
+  });
+
   it('does not rename an organization with an update older than its deletion', async () => {
     await applyWebhookEvent(event('organization.created', 'o7', organization({ id: 'org_ORD2', name: 'Kept', updatedAt: T1 }), T1));
     await applyWebhookEvent(event('organization.deleted', 'o8', organization({ id: 'org_ORD2', name: 'Kept', updatedAt: T1 }), T2));
@@ -213,12 +293,79 @@ describe('recordWebhookEvent', () => {
     await markWebhookEventProcessed(recorded.id);
     expect(await recordWebhookEvent(recorded)).toBe('duplicate');
   });
+
+  it("records an event's ids and times, never the profile", async () => {
+    const updatedAt = '2026-09-23T10:30:00.000Z';
+    const updated = event(
+      'user.updated',
+      'event_audit_user',
+      user({ id: 'user_audit', email: 'audit@example.com', firstName: 'Audit', lastName: 'Me', profilePictureUrl: 'https://example.com/p.png', updatedAt })
+    );
+
+    await recordWebhookEvent(updated);
+
+    expect(await storedPayload('event_audit_user')).toEqual({ object: 'user', id: 'user_audit', createdAt: AT, updatedAt });
+  });
+
+  it("keeps a membership's role as its slug, and not the organization's name", async () => {
+    const created = event(
+      'organization_membership.created',
+      'event_audit_membership',
+      membership({ id: 'om_AUDIT', organizationId: 'org_AUDIT', userId: 'user_audit', organizationName: 'Audit Ltd', role: 'admin' })
+    );
+
+    await recordWebhookEvent(created);
+
+    expect(await storedPayload('event_audit_membership')).toEqual({
+      object: 'organization_membership',
+      id: 'om_AUDIT',
+      organizationId: 'org_AUDIT',
+      userId: 'user_audit',
+      status: 'active',
+      role: 'admin',
+      createdAt: AT,
+      updatedAt: AT,
+    });
+  });
+
+  it('keeps no IP address, user agent or impersonator from an event it does not apply', async () => {
+    const session = event('session.created', 'event_audit_session', {
+      object: 'session',
+      id: 'session_AUDIT',
+      userId: 'user_audit',
+      ipAddress: '203.0.113.7',
+      userAgent: 'Mozilla/5.0',
+      organizationId: 'org_AUDIT',
+      impersonator: { email: 'support@example.com', reason: 'Audit' },
+      authMethod: 'password',
+      status: 'active',
+      expiresAt: AT,
+      endedAt: null,
+      createdAt: AT,
+      updatedAt: AT,
+    });
+
+    await recordWebhookEvent(session);
+
+    expect(await storedPayload('event_audit_session')).toEqual({
+      object: 'session',
+      id: 'session_AUDIT',
+      userId: 'user_audit',
+      organizationId: 'org_AUDIT',
+      status: 'active',
+      createdAt: AT,
+      updatedAt: AT,
+    });
+  });
 });
 
 describe('markWebhookEventFailed', () => {
   it('keeps the database reason for a replay, without the statement or its values', async () => {
-    const longName = `Secret-${'x'.repeat(100)}`;
-    const failing = event('organization.created', 'event_fail', organization({ id: 'org_FAIL', name: longName }));
+    // A status the CHECK refuses, carrying a value that must not be kept.
+    // This used to be an organization name over 100 characters, which the
+    // mirror now stores cut to 100 instead of failing.
+    const bad = membership({ id: 'om_FAIL', organizationId: 'org_FAIL', userId: 'user_known' });
+    const failing = event('organization_membership.created', 'event_fail', { ...bad, status: 'Secret-status' as 'active' });
 
     await recordWebhookEvent(failing);
 
@@ -232,7 +379,7 @@ describe('markWebhookEventFailed', () => {
 
     const row = await one<{ error: string }>(sql`select error from workos_webhook_events where id = 'event_fail'`);
 
-    expect(row?.error).toContain('organizations_name_check');
+    expect(row?.error).toContain('organization_memberships_status_check');
     expect(row?.error).toContain('SQLSTATE 23514');
     expect(row?.error).not.toMatch(/Secret|Failed query|params/i);
   });

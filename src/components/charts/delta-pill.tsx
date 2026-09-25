@@ -22,7 +22,7 @@ export function formatChange(change: Change): string {
 }
 
 /** The change in words, for screen readers. */
-export function describeChange(change: Change, direction: Direction): string {
+function describeChange(change: Change, direction: Direction): string {
   if (change.ratio === null) {
     return change.absolute === 0 ? 'No change on the comparison period' : 'New this period';
   }

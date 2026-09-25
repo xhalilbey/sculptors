@@ -1,7 +1,7 @@
 'use client';
 
 import { X } from 'lucide-react';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 /**
@@ -25,6 +25,9 @@ export function Modal({
   children: ReactNode;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  // Its own id per modal, as Dropdown does: a fixed 'modal-title' would be
+  // duplicated by a second modal on the page and name both after one.
+  const titleId = useId();
 
   useEffect(() => {
     const element = dialog.current;
@@ -37,7 +40,7 @@ export function Modal({
   return (
     <dialog
       ref={dialog}
-      aria-labelledby="modal-title"
+      aria-labelledby={titleId}
       onCancel={(event) => {
         event.preventDefault();
         onClose();
@@ -55,7 +58,7 @@ export function Modal({
         <div className="p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 id="modal-title" className="text-[18px] font-semibold tracking-[-0.01em]">
+              <h2 id={titleId} className="text-[18px] font-semibold tracking-[-0.01em]">
                 {title}
               </h2>
               {description ? <p className="mt-1 text-[13px] text-[var(--dashboard-text-muted)]">{description}</p> : null}

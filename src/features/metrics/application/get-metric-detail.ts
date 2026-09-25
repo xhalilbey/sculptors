@@ -33,8 +33,9 @@ export interface MetricDetail {
 
 /**
  * One metric over one range, in buckets of the size asked for -- or the
- * period's default when none was asked for, or the one asked for is not
- * offered for this length (a range change can leave a stale choice behind).
+ * period's default when none was asked for. The route answers a size the
+ * period does not offer with a 400 (api/schemas.ts), so falling back to the
+ * default here only guards a caller that skipped that schema.
  */
 export async function getMetricDetail(
   source: MetricsSource,

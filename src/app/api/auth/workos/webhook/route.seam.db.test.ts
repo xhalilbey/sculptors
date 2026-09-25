@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { createTestDb, type TestDb } from '@/db/testing/pglite';
 import type * as Identity from '@/lib/identity';
 import { wrap, type IdentityDb } from '@/lib/identity/internal/handle';
-import { wireMembershipEvent, wireUserUpdatedEvent } from '@/lib/workos/webhook-events.test-utils';
+import { AT, wireMembershipEvent, wireUserUpdatedEvent } from '@/lib/workos/webhook-events.test-utils';
 
 /**
  * The webhook through its real seam: snake_case JSON as WorkOS POSTs it,
@@ -50,8 +50,7 @@ vi.mock('@/lib/identity', async (importOriginal) => {
 
 const { POST } = await import('./route');
 
-async function deliver(payload: Record<string, unknown>) {
-  const timestamp = Date.now();
+async function deliver(payload: Record<string, unknown>, timestamp = Date.now()) {
   const signature = await workos.webhooks.computeSignature(timestamp, payload, SECRET);
 
   return POST(
@@ -110,6 +109,80 @@ describe('POST /api/auth/workos/webhook, end to end', () => {
     expect(await one(sql`select count(*)::int as n from workos_webhook_events where processed_at is not null and id like 'event_seam_%'`)).toEqual({ n: 3 });
   });
 
+  it('mirrors a member removed and added again, whom WorkOS gives a new membership id', async () => {
+    vi.stubEnv('WORKOS_WEBHOOK_SECRET', SECRET);
+    const pair = { organizationId: 'org_SEAMRE', userId: 'user_seam' };
+    const row = sql`select id, role, status from organization_memberships where organization_id = 'org_SEAMRE'`;
+
+    let response = await deliver(
+      wireMembershipEvent('organization_membership.created', 'event_seam_re_1', { id: 'om_SEAMA', ...pair, updatedAt: '2026-09-23T09:00:00.000Z' })
+    );
+
+    expect(response.status).toBe(200);
+
+    // Removed at the event's time (10:00), added again at 11:00 under a new
+    // id. The 'created' used to fail on the (organization, user) key with a
+    // 500 on every retry.
+    response = await deliver(wireMembershipEvent('organization_membership.deleted', 'event_seam_re_2', { id: 'om_SEAMA', ...pair }));
+
+    expect(response.status).toBe(200);
+
+    response = await deliver(
+      wireMembershipEvent('organization_membership.created', 'event_seam_re_3', { id: 'om_SEAMB', ...pair, updatedAt: '2026-09-23T11:00:00.000Z' })
+    );
+
+    expect(response.status).toBe(200);
+    expect((await t.db.execute(row)).rows).toEqual([{ id: 'om_SEAMB', role: 'member', status: 'active' }]);
+
+    // An update to the old membership from before its removal, delivered late.
+    response = await deliver(
+      wireMembershipEvent('organization_membership.updated', 'event_seam_re_4', {
+        id: 'om_SEAMA',
+        ...pair,
+        role: 'admin',
+        updatedAt: '2026-09-23T09:30:00.000Z',
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect((await t.db.execute(row)).rows).toEqual([{ id: 'om_SEAMB', role: 'member', status: 'active' }]);
+  });
+
+  it('records and applies an event whose organization name holds a NUL', async () => {
+    vi.stubEnv('WORKOS_WEBHOOK_SECRET', SECRET);
+
+    // The record step stored the payload as jsonb, which refuses a NUL, so
+    // this delivery and every retry of it used to be answered 500. It now
+    // keeps only the event's ids and times, as the SDK deserialized them.
+    const response = await deliver(
+      wireMembershipEvent('organization_membership.created', 'event_seam_nul', {
+        id: 'om_SEAMNUL',
+        organizationId: 'org_SEAMNUL',
+        userId: 'user_seam',
+        organizationName: 'Nul\u{0} Org',
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(await one(sql`select name from organizations where id = 'org_SEAMNUL'`)).toEqual({ name: 'Nul Org' });
+    expect(await one(sql`select status from organization_memberships where id = 'om_SEAMNUL'`)).toEqual({ status: 'active' });
+    expect(
+      await one(sql`select payload, processed_at is not null as processed from workos_webhook_events where id = 'event_seam_nul'`)
+    ).toEqual({
+      payload: {
+        object: 'organization_membership',
+        id: 'om_SEAMNUL',
+        organizationId: 'org_SEAMNUL',
+        userId: 'user_seam',
+        status: 'active',
+        role: 'member',
+        createdAt: AT,
+        updatedAt: AT,
+      },
+      processed: true,
+    });
+  });
+
   it('writes the first name, last name and avatar of a user.updated', async () => {
     vi.stubEnv('WORKOS_WEBHOOK_SECRET', SECRET);
 
@@ -128,6 +201,10 @@ describe('POST /api/auth/workos/webhook, end to end', () => {
       first_name: 'Ada',
       last_name: 'Lovelace',
       avatar_url: 'https://example.com/ada.png',
+    });
+    // Applied from the event itself; the record keeps no profile.
+    expect(await one(sql`select payload from workos_webhook_events where id = 'event_seam_user'`)).toEqual({
+      payload: { object: 'user', id: 'user_seam', createdAt: AT, updatedAt: AT },
     });
   });
 
@@ -206,5 +283,29 @@ describe('POST /api/auth/workos/webhook, end to end', () => {
 
     expect(response.status).toBe(401);
     expect(await one(sql`select count(*)::int as n from organization_memberships where id = 'om_FORGED'`)).toEqual({ n: 0 });
+  });
+
+  it('refuses a delivery signed outside the replay window', async () => {
+    vi.stubEnv('WORKOS_WEBHOOK_SECRET', SECRET);
+    const payload = wireMembershipEvent('organization_membership.created', 'event_seam_stale', {
+      id: 'om_STALE',
+      organizationId: 'org_STALE',
+      userId: 'user_seam',
+    });
+
+    // A genuine delivery captured and sent again after the SDK's 180 s
+    // tolerance: the signature is right, the timestamp is not.
+    let response = await deliver(payload, Date.now() - 181_000);
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'Invalid signature' });
+    expect(await one(sql`select count(*)::int as n from workos_webhook_events where id = 'event_seam_stale'`)).toEqual({ n: 0 });
+    expect(await one(sql`select count(*)::int as n from organization_memberships where id = 'om_STALE'`)).toEqual({ n: 0 });
+
+    // The same bytes signed inside the window are accepted, so the window
+    // is still 180 s and the timestamp alone was refused.
+    response = await deliver(payload, Date.now() - 170_000);
+
+    expect(response.status).toBe(200);
   });
 });

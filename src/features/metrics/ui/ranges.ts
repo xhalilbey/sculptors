@@ -1,4 +1,4 @@
-import { isIsoDate, isPreset, type Preset, type RangeSelection } from '../domain/time';
+import { DEFAULT_PRESET, isIsoDate, isPreset, type Preset, type RangeSelection } from '../domain/time';
 
 /** The presets, in the order the range bar shows them after Custom. */
 export const PRESET_OPTIONS: ReadonlyArray<{ value: Preset; label: string; title: string }> = [
@@ -11,7 +11,7 @@ export const PRESET_OPTIONS: ReadonlyArray<{ value: Preset; label: string; title
   { value: '12m', label: '12M', title: 'Last 12 months' },
 ];
 
-export const DEFAULT_SELECTION: RangeSelection = { preset: '30d' };
+export const DEFAULT_SELECTION: RangeSelection = { preset: DEFAULT_PRESET };
 
 /**
  * The range a page opens on, from its URL (?range=7d, or

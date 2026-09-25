@@ -3,7 +3,8 @@ import type { MetricKey, RevenueSource } from '../domain/metrics';
 import type { TimeInterval } from '../domain/time';
 
 /** 'demo' until the agents report real events. */
-export type SourceKind = 'demo' | 'live';
+export const SOURCE_KINDS = ['demo', 'live'] as const;
+export type SourceKind = (typeof SOURCE_KINDS)[number];
 
 export interface TotalsQuery {
   organizationId: OrganizationId;
