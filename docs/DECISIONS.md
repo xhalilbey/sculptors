@@ -900,3 +900,22 @@ stop the cards glowing; and to change "Back to your platform".
   screen pixels, so on a phone a pulse ran off its line a third of the way
   along. Pulses and packets scale instead, with wider strokes on small
   screens; the lines keep non-scaling strokes.
+
+## 2026-09-25 — Journey: equal code cards, a simpler chapter two, commerce events
+
+- **Chapter one's three code cards are one height** ("they should be
+  equal"): the cells share three subgrid rows (stage, title, copy), each
+  card fills its stage, and every card now ends on what it gives -- store
+  ready, the synced counts, the agent live.
+- **Chapter two, simplified** (the step list beside the thread "never gets
+  simpler"): the four bordered steps and the call-to-action block became one
+  short pitch beside the thread, in the sectors card's grammar -- the thread
+  left, the copy right -- with the four benefits as one-line bullets and the
+  same two ways in. The thread lost one message. The helix is untouched.
+- **Chapter three, shorter and about commerce** ("focus on things like
+  order created, added to cart"): five events in the order a sale happens --
+  product recommended, added to cart, checkout started, order created, cart
+  recovered -- one short row each (name, what it means, the event's code
+  name), the way in under them, and a handler for two of them beside. The
+  rails spread to fill the drawing and carry the events' names in the
+  journey's pixel capitals. The lower part went from about 560px to 380px.

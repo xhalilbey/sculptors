@@ -188,7 +188,8 @@ export function rails(events: readonly string[]) {
   const agent: Point = { x: 250, y: ART_HEIGHT / 2 };
   const platform = { x: 890, top: 30, bottom: ART_HEIGHT - 30 };
   const mid = (events.length - 1) / 2;
-  const lane = Math.min(50, (ART_HEIGHT - 100) / Math.max(1, events.length - 1));
+  // Lanes spread to fill the canvas, up to 64 apart (five fill it; seven sit 50 apart).
+  const lane = Math.min(64, (ART_HEIGHT - 100) / Math.max(1, events.length - 1));
   const BUNDLE = 6;
   const SPLIT = 340;
   const STAGGER = 16;

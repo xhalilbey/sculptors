@@ -22,7 +22,7 @@ import { dotPainter, strandPainter, usePointerField } from './use-pointer-field'
  *
  *   01 Integrate            your platform's data flowing in   SDK, sync, compose
  *   02 In your product      shopper and agent, one helix      the thread + CTA
- *   03 Back to your platform  events running home on rails    the event catalog
+ *   03 Back to your platform  events running home on rails    the commerce events
  *                                                             and a handler
  *
  * The drawings answer the pointer as caretta.so's do (owner's direction,
@@ -43,25 +43,25 @@ import { dotPainter, strandPainter, usePointerField } from './use-pointer-field'
 const SOURCES = ['Catalog', 'Customers', 'Orders', 'Inventory', 'Events', 'Rules', 'Channels'];
 
 /**
- * What comes back to the platform: the events a developer subscribes to,
- * what each one means, what it carries, and -- for the drawing only -- how
- * often it fires, in seconds.
+ * What comes back to the platform: the commerce moments the agent makes,
+ * as the events a developer subscribes to (owner's direction, 25 Sep 2026:
+ * "focus on things like order created and added to cart"), in the order a
+ * sale happens -- and, for the drawing only, how often each fires, in
+ * seconds.
  */
 const EVENTS = [
-  { name: 'order.created', copy: 'The agent closed a sale in the thread.', carries: 'order · items · attribution', every: 3.4 },
-  { name: 'cart.recovered', copy: 'A cart came back, with the message that brought it.', carries: 'cart · message', every: 5.8 },
-  { name: 'handoff.requested', copy: 'A person is needed, and gets the whole conversation.', carries: 'conversation · reason', every: 7.4 },
-  { name: 'memory.updated', copy: 'The agent learned something about a customer.', carries: 'customer · facts', every: 2.6 },
-  { name: 'review.collected', copy: 'A review asked for after delivery, and given.', carries: 'order · rating · text', every: 6.6 },
-  { name: 'restock.alerted', copy: 'A buyer told the moment their size is back.', carries: 'product · customer', every: 8.4 },
-  { name: 'attribution.recorded', copy: 'Revenue tied to the message that earned it.', carries: 'message · revenue', every: 4.6 },
+  { name: 'product.recommended', label: 'Product recommended', copy: 'The right product, shown in the thread.', every: 2.6 },
+  { name: 'cart.item_added', label: 'Added to cart', copy: 'The shopper said yes, and it is in the cart.', every: 3.2 },
+  { name: 'checkout.started', label: 'Checkout started', copy: 'Paying, on your own checkout.', every: 4.6 },
+  { name: 'order.created', label: 'Order created', copy: 'The sale closed in the thread. The order is yours.', every: 3.8 },
+  { name: 'cart.recovered', label: 'Cart recovered', copy: 'A cart left behind, brought back by one message.', every: 6.4 },
 ] as const;
 
 type EventName = (typeof EVENTS)[number]['name'];
 
 const CONVERGE = converge(SOURCES);
 const HELIX = helix();
-const RAILS = rails(EVENTS.map(event => event.name));
+const RAILS = rails(EVENTS.map(event => event.label));
 
 /** The journey's drawings are 1200 wide: the pointer reaches about a seventh of it. */
 const REACH: Reach = { radius: 170, push: 34 };
@@ -430,7 +430,7 @@ function RailsArt({ lit }: { readonly lit: EventName | null }) {
               />
               <path d={route.d} pathLength={1} data-strand={`rail-${index}`} className="j-packet" />
               <rect x={route.port.x - 4} y={route.port.y - 4} width={8} height={8} className="j-port" />
-              <text x={route.label.at.x} y={route.label.at.y} dy="0.35em" className="j-label is-code j-port-label">
+              <text x={route.label.at.x} y={route.label.at.y} dy="0.35em" className="j-label j-port-label">
                 {route.label.text}
               </text>
             </g>
@@ -533,16 +533,17 @@ const COMPOSE: readonly (readonly Token[])[] = [
   [['p', '})']],
 ];
 
-const DURING_STEPS = [
-  { title: 'Agents that close the sale', copy: 'The answer, the product and the order, in one thread.' },
-  { title: 'Your UI, your brand', copy: 'Drop in our components, or build your own on the API.' },
-  { title: 'Every channel you support', copy: 'Web chat, WhatsApp, Instagram and SMS, one agent.' },
-  { title: 'A person when it matters', copy: 'Handoff to your team, with the whole context.' },
+/** What a platform gets from it, one line each. */
+const DURING_POINTS = [
+  'The sale closes in the thread',
+  'Your UI and your brand',
+  'Web chat, WhatsApp, Instagram and SMS',
+  'A person steps in with the whole context',
 ];
 
 function Thread() {
   return (
-    <div className="j-chat" data-reveal style={{ '--reveal-delay': 120 } as CSSProperties}>
+    <div className="j-chat" data-reveal>
       <div className="j-chat-head">
         <span className="j-avatar is-small">AY</span>
         <div>
@@ -556,9 +557,7 @@ function Thread() {
       </div>
       <div className="j-chat-body">
         <p className="j-msg is-shopper">Hi! Do you have the black blazer in 38?</p>
-        <p className="j-msg is-agent">
-          Hi Ayşe — yes, 2 left in 38. It runs a size small, so 38 fits like the 37 you kept last time.
-        </p>
+        <p className="j-msg is-agent">Yes, 2 left in 38. It runs small, so it fits like the 37 you kept.</p>
         <div className="j-msg is-card">
           <span className="j-thumb" aria-hidden="true" />
           <div>
@@ -567,7 +566,6 @@ function Thread() {
           </div>
           <b>Add to cart</b>
         </div>
-        <p className="j-msg is-shopper">Perfect, add it.</p>
         <p className="j-msg is-system">
           <Check aria-hidden="true" />
           Order #1042 placed · $129 · arrives Thursday
@@ -579,12 +577,13 @@ function Thread() {
 
 const HANDLER: readonly (readonly Token[])[] = [
   [['c', '// every event arrives typed and signed']],
-  [['p', 'store.webhooks.'], ['f', 'on'], ['p', '('], ['s', "'order.created'"], ['p', ', '], ['k', 'async'], ['t', ' event'], ['p', ' => {']],
+  [['k', 'const'], ['p', ' hooks = store.webhooks']],
+  [],
+  [['p', 'hooks.'], ['f', 'on'], ['p', '('], ['s', "'order.created'"], ['p', ', '], ['k', 'async'], ['t', ' event'], ['p', ' => {']],
   [['k', '  await'], ['p', ' platform.orders.'], ['f', 'upsert'], ['p', '('], ['t', 'event'], ['p', '.order)']],
-  [['k', '  await'], ['p', ' platform.revenue.'], ['f', 'attribute'], ['p', '({']],
-  [['p', '    message: '], ['t', 'event'], ['p', '.attribution.messageId,']],
-  [['p', '    amount: '], ['t', 'event'], ['p', '.order.total,']],
-  [['p', '  })']],
+  [['p', '})']],
+  [['p', 'hooks.'], ['f', 'on'], ['p', '('], ['s', "'cart.item_added'"], ['p', ', '], ['k', 'async'], ['t', ' event'], ['p', ' => {']],
+  [['k', '  await'], ['p', ' platform.carts.'], ['f', 'sync'], ['p', '('], ['t', 'event'], ['p', '.cart)']],
   [['p', '})']],
 ];
 
@@ -603,29 +602,24 @@ function PlatformChapter() {
         tag="Back to your platform"
         icon={Webhook}
         title="Your platform stays the source of truth:"
-        accent="every sale, handoff and memory change comes back to it as a typed, signed event."
+        accent="every product shown, cart and order comes back to it as a typed, signed event."
       />
       <RailsArt lit={lit} />
       <div className="j-after">
-        <ul className={lit ? 'j-events has-lit' : 'j-events'} onPointerLeave={() => setLit(null)}>
-          {EVENTS.map((event, index) => (
-            <li
-              key={event.name}
-              className={event.name === lit ? 'is-lit' : undefined}
-              data-reveal
-              style={{ '--reveal-delay': index * 50 } as CSSProperties}
-              onPointerEnter={() => setLit(event.name)}
-            >
-              <code>{event.name}</code>
-              <div>
+        <div className="j-after-events" data-reveal>
+          <ul className={lit ? 'j-events has-lit' : 'j-events'} onPointerLeave={() => setLit(null)}>
+            {EVENTS.map(event => (
+              <li
+                key={event.name}
+                className={event.name === lit ? 'is-lit' : undefined}
+                onPointerEnter={() => setLit(event.name)}
+              >
+                <strong>{event.label}</strong>
                 <p>{event.copy}</p>
-                <span>{event.carries}</span>
-              </div>
-            </li>
-          ))}
-        </ul>
-        <div className="j-after-code" data-reveal style={{ '--reveal-delay': 120 } as CSSProperties}>
-          <Code file="webhooks.ts" lines={HANDLER} foot="Signed · retried · replayable" />
+                <code>{event.name}</code>
+              </li>
+            ))}
+          </ul>
           <div className="j-after-cta">
             <Link href="/auth/login" className="btn-brand">
               Get your API key
@@ -635,6 +629,9 @@ function PlatformChapter() {
               Book a demo
             </a>
           </div>
+        </div>
+        <div className="j-after-code" data-reveal style={{ '--reveal-delay': 120 } as CSSProperties}>
+          <Code file="webhooks.ts" lines={HANDLER} foot="Signed · retried · replayable" />
         </div>
       </div>
     </div>
@@ -664,7 +661,7 @@ export function AgentJourney() {
               copy="One typed package. Every merchant on your platform gets an isolated store under your key."
               delay={0}
             >
-              <Code file="setup.ts" lines={INSTALL} />
+              <Code file="setup.ts" lines={INSTALL} foot="Store ready · isolated per merchant" />
             </Cell>
             <Cell
               title="Sync what you already have"
@@ -678,7 +675,7 @@ export function AgentJourney() {
               copy="Memory, channels, skills and rules are primitives. How your agents sell is yours to decide."
               delay={180}
             >
-              <Code file="agent.ts" lines={COMPOSE} />
+              <Code file="agent.ts" lines={COMPOSE} foot="Live on web and WhatsApp" />
             </Cell>
           </div>
         </div>
@@ -692,33 +689,29 @@ export function AgentJourney() {
             accent="the answer, the product and the order, without a link out."
           />
           <HelixArt />
+          {/* The thread on the left, what it is for on the right: the sectors
+              card's grammar (owner's direction, 25 Sep 2026: the step list
+              beside the thread "never gets simpler"). */}
           <div className="j-during">
-            <ol className="j-steps" data-reveal>
-              {DURING_STEPS.map((step, index) => (
-                <li key={step.title} className={index === 0 ? 'is-active' : undefined}>
-                  <span>{String(index + 1).padStart(2, '0')}</span>
-                  <div>
-                    <strong>{step.title}</strong>
-                    <p>{step.copy}</p>
-                  </div>
-                </li>
-              ))}
-              {/* The call to action says what the Agent Store is for. */}
-              <li className="j-steps-cta">
-                <strong>Give every merchant on your platform an agent that sells.</strong>
-                <p>Integrate the Agent Store in an afternoon and ship it under your own brand.</p>
-                <div>
-                  <Link href="/auth/login" className="btn-brand">
-                    Integrate the Agent Store
-                    <span aria-hidden="true">›</span>
-                  </Link>
-                  <a href={DEMO_URL} target="_blank" rel="noopener noreferrer">
-                    Book a demo
-                  </a>
-                </div>
-              </li>
-            </ol>
             <Thread />
+            <div className="j-pitch" data-reveal style={{ '--reveal-delay': 120 } as CSSProperties}>
+              <h3>Give every merchant on your platform an agent that sells.</h3>
+              <p>Integrate the Agent Store in an afternoon and ship it under your own brand.</p>
+              <ul>
+                {DURING_POINTS.map(point => (
+                  <li key={point}>{point}</li>
+                ))}
+              </ul>
+              <div className="j-pitch-cta">
+                <Link href="/auth/login" className="btn-brand">
+                  Integrate the Agent Store
+                  <span aria-hidden="true">›</span>
+                </Link>
+                <a href={DEMO_URL} target="_blank" rel="noopener noreferrer">
+                  Book a demo
+                </a>
+              </div>
+            </div>
           </div>
         </div>
 
