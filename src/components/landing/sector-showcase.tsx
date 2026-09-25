@@ -1,7 +1,7 @@
 'use client';
 
 import { Building2, CarFront, Droplet, Plane, Plus, Store, type LucideIcon } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type CSSProperties, type PointerEvent } from 'react';
 
 /*
  * Where the agents sell -- the sectors we support (owner's direction, 24 Sep
@@ -79,21 +79,35 @@ const SECTORS: readonly Sector[] = [
 const CONTACT_URL = 'https://cal.com/halil-eren-pdniuc/30min';
 const OTHERS_ID = 'others';
 
-/** The trend as a line and an area under it, in a 600x280 box. */
+/** The trend as a line and an area under it, in a 600x280 box, and the line's heights. */
 function chartPaths(values: readonly number[]) {
   const max = Math.max(...values);
   const min = Math.min(...values);
   const span = max - min || 1;
-  const line = values
-    .map((value, index) => {
+  const heights = values.map(value => 260 - ((value - min) / span) * 200);
+  const line = heights
+    .map((y, index) => {
       const x = (index / (values.length - 1)) * 600;
-      const y = 260 - ((value - min) / span) * 200;
 
       return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`;
     })
     .join(' ');
 
-  return { line, area: `${line} L600 280 L0 280 Z` };
+  return { line, area: `${line} L600 280 L0 280 Z`, heights };
+}
+
+/**
+ * Where the pointer's marker sits: `at` is how far across the chart the
+ * pointer is (0..1), and the dot rides the line there, between the weeks.
+ */
+function cursorAt(heights: readonly number[], at: number): CSSProperties {
+  const along = at * (heights.length - 1);
+  const index = Math.min(heights.length - 2, Math.floor(along));
+  const from = heights[index] ?? 0;
+  const to = heights[index + 1] ?? from;
+  const y = from + (to - from) * (along - index);
+
+  return { '--x': `${at * 100}%`, '--y': `${(y / 280) * 100}%` } as CSSProperties;
 }
 
 export function SectorShowcase() {
@@ -175,7 +189,15 @@ export function SectorShowcase() {
 }
 
 function SectorChart({ sector }: { readonly sector: Sector }) {
-  const { line, area } = chartPaths(sector.metric.trend);
+  const { line, area, heights } = chartPaths(sector.metric.trend);
+  // The pointer over the chart, as a share of its width: a marker rides the
+  // line under it, as the drawings further down answer the pointer.
+  const [at, setAt] = useState<number | null>(null);
+  const follow = (event: PointerEvent<HTMLDivElement>) => {
+    const box = event.currentTarget.getBoundingClientRect();
+
+    setAt(Math.min(1, Math.max(0, (event.clientX - box.left) / box.width)));
+  };
 
   return (
     <figure className="sectors-chart">
@@ -184,19 +206,22 @@ function SectorChart({ sector }: { readonly sector: Sector }) {
         <span>{sector.metric.label}, last 12 weeks</span>
         <em>Illustrative</em>
       </figcaption>
-      <svg viewBox="0 0 600 280" preserveAspectRatio="none" aria-hidden="true">
-        <defs>
-          <linearGradient id={`sectors-fill-${sector.id}`} x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0" stopColor="#ff3621" stopOpacity="0.32" />
-            <stop offset="1" stopColor="#ff3621" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        {[70, 140, 210].map(y => (
-          <line key={y} x1="0" x2="600" y1={y} y2={y} className="sectors-grid-line" />
-        ))}
-        <path d={area} fill={`url(#sectors-fill-${sector.id})`} className="sectors-area" />
-        <path d={line} className="sectors-line" pathLength={1} />
-      </svg>
+      <div className="sectors-plot" onPointerMove={follow} onPointerLeave={() => setAt(null)}>
+        <svg viewBox="0 0 600 280" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <linearGradient id={`sectors-fill-${sector.id}`} x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0" stopColor="#ff3621" stopOpacity="0.32" />
+              <stop offset="1" stopColor="#ff3621" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          {[70, 140, 210].map(y => (
+            <line key={y} x1="0" x2="600" y1={y} y2={y} className="sectors-grid-line" />
+          ))}
+          <path d={area} fill={`url(#sectors-fill-${sector.id})`} className="sectors-area" />
+          <path d={line} className="sectors-line" pathLength={1} />
+        </svg>
+        {at === null ? null : <span className="sectors-cursor" style={cursorAt(heights, at)} aria-hidden="true" />}
+      </div>
     </figure>
   );
 }
@@ -209,12 +234,14 @@ function OthersChart() {
         <strong>+</strong>
         <span>your numbers, once your agent runs</span>
       </figcaption>
-      <svg viewBox="0 0 600 280" preserveAspectRatio="none" aria-hidden="true">
-        {[70, 140, 210].map(y => (
-          <line key={y} x1="0" x2="600" y1={y} y2={y} className="sectors-grid-line" />
-        ))}
-        <path d="M0 250 L120 236 L240 220 L360 190 L480 160 L600 120" className="sectors-line is-dashed" />
-      </svg>
+      <div className="sectors-plot">
+        <svg viewBox="0 0 600 280" preserveAspectRatio="none" aria-hidden="true">
+          {[70, 140, 210].map(y => (
+            <line key={y} x1="0" x2="600" y1={y} y2={y} className="sectors-grid-line" />
+          ))}
+          <path d="M0 250 L120 236 L240 220 L360 190 L480 160 L600 120" className="sectors-line is-dashed" />
+        </svg>
+      </div>
     </figure>
   );
 }

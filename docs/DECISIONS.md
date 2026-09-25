@@ -858,3 +858,45 @@ their platforms -- and the old action row gave way to our in-house engines.
   index in the pixel face rides the left gutter from 1500px up.
 - Removed: `agent-showcase.tsx`, `agent-store-parts.tsx`, their four
   `public/store` images and about 520 lines of their CSS.
+
+## 2026-09-25 — The drawings answer the pointer; Atlas redrawn; chapter three rebuilt
+
+The owner asked to feel the drawings under the hand "like Caretta", in the
+engines and in the journey above them; to redraw Atlas, animate Zeus and
+stop the cards glowing; and to change "Back to your platform".
+
+- **The hover is Caretta's, read from their renderer** (`pointer-field.ts`,
+  tested; driven by `use-pointer-field.ts`): the pointer is followed, not
+  tracked (its position eases in each frame), and it carries a power that
+  each pointermove raises by 0.05 and each frame lets decay. Points within
+  reach are pushed straight away from it by a smoothstep of their distance;
+  `push` stays at most half of `radius`, so lines part and never fold.
+  Lines carry a strand -- samples and how loose each one is -- so they bend
+  where they are free and hold where they are pinned (a line's root, a
+  node, both ends of a rail). Frames write attributes outside React onto
+  the server-rendered rest state and put it back when the field dies; the
+  loop only runs while a drawing is on screen and the field is alive (or
+  the drawing moves on its own), and not at all under reduced motion.
+- **Journey**: pulses ride one line in three into the Agent Store (01), the
+  helix's dots part around the pointer with their rungs following (02, its
+  look unchanged), and the sectors chart gets a marker that rides its line.
+- **Chapter three is ours now**: the headline and the fan-plus-grid were
+  Caretta's own "it doesn't end when the call does" shape. It is now
+  "Your platform stays the source of truth", a transit-map drawing (the
+  agent's events leave as one bundle and peel off at 45 degrees, outer
+  rails first so none cross, into a port each on the platform, a packet on
+  each as often as its event fires), an event catalog, and a typed webhook
+  handler with the call to action. Pointing at an event lights its rail.
+- **Engines**: no glow behind the drawings, softer whites. Zeus builds
+  itself root first as the card arrives, then events run up its routes and
+  the memory they reach ticks. Atlas is now an armillary sphere -- the
+  celestial sphere the titan carries, as the instrument of rings it was
+  drawn as: equator, two colures and the zodiac band, each ring an ellipse
+  faded by depth with its own gradient, requests travelling the rings. A
+  hand over it is load: it leans toward the hand, turns faster, and more
+  requests join, then it settles.
+- **A Chrome trap**: `vector-effect: non-scaling-stroke` makes a
+  `pathLength` dash be measured in the drawing's units but laid out in
+  screen pixels, so on a phone a pulse ran off its line a third of the way
+  along. Pulses and packets scale instead, with wider strokes on small
+  screens; the lines keep non-scaling strokes.

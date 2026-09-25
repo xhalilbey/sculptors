@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ART_HEIGHT, ART_WIDTH, converge, fanOut, helix, seeded } from './journey-art';
+import { ART_HEIGHT, ART_WIDTH, converge, helix, rails, seeded } from './journey-art';
 
 describe('seeded', () => {
   it('repeats itself for the same seed, so server and browser draw alike', () => {
@@ -51,23 +51,81 @@ describe('converge', () => {
   });
 });
 
-describe('fanOut', () => {
-  const art = fanOut(['delivery update', 'review asked'], 24);
+describe('converge strands', () => {
+  const art = converge(['a', 'b'], 12);
 
-  it('starts every line at the order', () => {
+  it('run from the source to the agent, loose at the source and pinned at the agent', () => {
     for (const line of art.lines) {
-      expect(line.d.startsWith(`M${art.order.x} ${art.order.y}`)).toBe(true);
-      expect(line.end.x).toBeGreaterThan(art.order.x);
+      expect(line.strand.xs[0]).toBeCloseTo(line.end.x, 5);
+      expect(line.strand.xs.at(-1)).toBeCloseTo(art.agent.x, 5);
+      expect(line.strand.free[0]).toBe(1);
+      expect(line.strand.free.at(-1)).toBe(0);
+    }
+  });
+});
+
+describe('rails', () => {
+  const events = ['order.created', 'cart.recovered', 'handoff.requested', 'memory.updated', 'review.collected'];
+  const art = rails(events);
+
+  /** A rail's height at x, read off its samples (every rail runs left to right). */
+  const heightAt = (xs: readonly number[], ys: readonly number[], x: number) => {
+    for (let index = 1; index < xs.length; index++) {
+      const x0 = xs[index - 1] ?? 0;
+      const x1 = xs[index] ?? 0;
+
+      if (x >= x0 && x <= x1 && x1 > x0) {
+        return (ys[index - 1] ?? 0) + (((ys[index] ?? 0) - (ys[index - 1] ?? 0)) * (x - x0)) / (x1 - x0);
+      }
+    }
+
+    return Number.NaN;
+  };
+
+  it('runs every rail from the agent to its port on the platform', () => {
+    for (const rail of art.rails) {
+      expect(rail.d.startsWith(`M${art.agent.x} ${art.agent.y}`)).toBe(true);
+      expect(rail.strand.xs.at(-1)).toBeCloseTo(art.platform.x, 5);
+      expect(rail.strand.ys.at(-1)).toBeCloseTo(rail.port.y, 5);
     }
   });
 
-  it('labels in a column right of every dot, with room left for the text', () => {
-    const rightmostDot = Math.max(...art.lines.map(line => line.end.x));
+  it('spaces the ports evenly, top to bottom', () => {
+    const ys = art.rails.map(rail => rail.port.y);
+    const gaps = ys.slice(1).map((y, index) => y - (ys[index] ?? 0));
 
-    for (const label of art.labels) {
-      expect(label.at.x).toBeGreaterThan(rightmostDot);
-      expect(label.at.x).toBeLessThan(ART_WIDTH - 200);
+    for (const gap of gaps) {
+      expect(gap).toBeCloseTo(gaps[0] ?? 0, 5);
+      expect(gap).toBeGreaterThan(0);
     }
+  });
+
+  it('never lets two rails cross', () => {
+    for (let x = art.agent.x + 40; x <= art.platform.x; x += 4) {
+      const heights = art.rails.map(rail => heightAt(rail.strand.xs, rail.strand.ys, x));
+
+      for (let index = 1; index < heights.length; index++) {
+        expect(heights[index]).toBeGreaterThan(heights[index - 1] ?? Number.POSITIVE_INFINITY);
+      }
+    }
+  });
+
+  it('pins every rail at both ends', () => {
+    for (const rail of art.rails) {
+      expect(rail.strand.free[0]).toBe(0);
+      expect(rail.strand.free.at(-1)).toBe(0);
+      expect(Math.max(...rail.strand.free)).toBe(1);
+    }
+  });
+
+  it('labels each port right of the platform, with room for the text', () => {
+    for (const rail of art.rails) {
+      expect(rail.label.at.x).toBeGreaterThan(art.platform.x);
+      expect(rail.label.at.x).toBeLessThan(ART_WIDTH - 200);
+      expect(rail.label.at.y).toBe(rail.port.y);
+    }
+
+    expect(art.rails.map(rail => rail.label.text)).toEqual(events);
   });
 });
 
