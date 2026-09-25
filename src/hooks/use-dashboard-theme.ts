@@ -1,6 +1,6 @@
 'use client';
 
-import { useSyncExternalStore } from 'react';
+import { createContext, useContext, useSyncExternalStore } from 'react';
 
 /**
  * The dashboard's theme: the shell (rail and content ground) in dark or in
@@ -46,6 +46,18 @@ export function setDashboardTheme(theme: DashboardTheme): void {
   window.dispatchEvent(new Event(CHANGE_EVENT));
 }
 
+/**
+ * Pins the theme for a subtree, whatever the browser chose. The landing page
+ * draws the real Overview inside its hero and needs it in the landing's own
+ * light or dark, not in the visitor's dashboard setting.
+ */
+const ForcedTheme = createContext<DashboardTheme | null>(null);
+
+export const DashboardThemeOverride = ForcedTheme.Provider;
+
 export function useDashboardTheme(): DashboardTheme {
-  return useSyncExternalStore(subscribe, read, () => 'dark');
+  const forced = useContext(ForcedTheme);
+  const stored = useSyncExternalStore<DashboardTheme>(subscribe, read, () => 'dark');
+
+  return forced ?? stored;
 }

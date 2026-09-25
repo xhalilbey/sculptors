@@ -823,3 +823,99 @@ The owner asked for better type, like Groq's, and singled out Groq's nav
   as Groq's are; the hero's tracking opened from -0.06em to -0.045em.
 - **Not done here**: the app itself (dashboard, auth) still falls through
   to the system font for the same reason.
+
+## 2026-09-24 — After the sectors: one journey for developers, and the engines
+
+The owner called the content after the sectors weak and pointed at
+caretta.so, which explains its product as a story with a drawing per step.
+Two corrections followed the first pass: it "broke from our definition and
+our colours" -- we serve developers, who integrate the Agent Store into
+their platforms -- and the old action row gave way to our in-house engines.
+
+- **Journey** (`agent-journey.tsx`), replacing the agent's cards, the
+  store's parts and the action row: 01 Integrate (the platform's data
+  flowing into the Agent Store; illustrative SDK code for install, sync and
+  compose), 02 In your product (the helix of a conversation -- kept exactly
+  as first drawn at the owner's word, only recoloured -- with a call to
+  action: "Give every merchant on your platform an agent that sells"),
+  03 Back to your platform (one agent fanning out to the events a platform
+  receives, and what a developer gets). The SDK names in the code are
+  placeholders until the real API is settled.
+- **Palette**: lava #FF3621 for every accent, navy for ink and code; the
+  first pass's blue and green chapters are gone.
+- **Drawings** are pure, seeded geometry (`journey-art.ts`,
+  `engine-art.ts`, tested), so server and browser draw the same picture.
+  Every coordinate is rounded: an unrounded Math.cos differed in the last
+  digit between Node and Chrome and broke hydration.
+- **Engines** (`engines.tsx`): Zeus (customer memory build), Prometheus
+  (realtime data processing), Atlas (agent request scaling -- our name for
+  the owner's "another Greek god", the titan who carries the sky). Navy
+  cards, one object drawn in light each: a forking bolt, a flame of rising
+  streams, a globe with requests in orbit. ENGINES is a list; the grid
+  takes more.
+- **Anchors**: the header's four links now all land (Agent Store →
+  sectors, Memory → 01, Integrations → 03, Platform → the journey), and an
+  index in the pixel face rides the left gutter from 1500px up.
+- Removed: `agent-showcase.tsx`, `agent-store-parts.tsx`, their four
+  `public/store` images and about 520 lines of their CSS.
+
+## 2026-09-25 — The drawings answer the pointer; Atlas redrawn; chapter three rebuilt
+
+The owner asked to feel the drawings under the hand "like Caretta", in the
+engines and in the journey above them; to redraw Atlas, animate Zeus and
+stop the cards glowing; and to change "Back to your platform".
+
+- **The hover is Caretta's, read from their renderer** (`pointer-field.ts`,
+  tested; driven by `use-pointer-field.ts`): the pointer is followed, not
+  tracked (its position eases in each frame), and it carries a power that
+  each pointermove raises by 0.05 and each frame lets decay. Points within
+  reach are pushed straight away from it by a smoothstep of their distance;
+  `push` stays at most half of `radius`, so lines part and never fold.
+  Lines carry a strand -- samples and how loose each one is -- so they bend
+  where they are free and hold where they are pinned (a line's root, a
+  node, both ends of a rail). Frames write attributes outside React onto
+  the server-rendered rest state and put it back when the field dies; the
+  loop only runs while a drawing is on screen and the field is alive (or
+  the drawing moves on its own), and not at all under reduced motion.
+- **Journey**: pulses ride one line in three into the Agent Store (01), the
+  helix's dots part around the pointer with their rungs following (02, its
+  look unchanged), and the sectors chart gets a marker that rides its line.
+- **Chapter three is ours now**: the headline and the fan-plus-grid were
+  Caretta's own "it doesn't end when the call does" shape. It is now
+  "Your platform stays the source of truth", a transit-map drawing (the
+  agent's events leave as one bundle and peel off at 45 degrees, outer
+  rails first so none cross, into a port each on the platform, a packet on
+  each as often as its event fires), an event catalog, and a typed webhook
+  handler with the call to action. Pointing at an event lights its rail.
+- **Engines**: no glow behind the drawings, softer whites. Zeus builds
+  itself root first as the card arrives, then events run up its routes and
+  the memory they reach ticks. Atlas is now an armillary sphere -- the
+  celestial sphere the titan carries, as the instrument of rings it was
+  drawn as: equator, two colures and the zodiac band, each ring an ellipse
+  faded by depth with its own gradient, requests travelling the rings. A
+  hand over it is load: it leans toward the hand, turns faster, and more
+  requests join, then it settles.
+- **A Chrome trap**: `vector-effect: non-scaling-stroke` makes a
+  `pathLength` dash be measured in the drawing's units but laid out in
+  screen pixels, so on a phone a pulse ran off its line a third of the way
+  along. Pulses and packets scale instead, with wider strokes on small
+  screens; the lines keep non-scaling strokes.
+
+## 2026-09-25 — Journey: equal code cards, a simpler chapter two, commerce events
+
+- **Chapter one's three code cards are one height** ("they should be
+  equal"): the cells share three subgrid rows (stage, title, copy), each
+  card fills its stage, and every card now ends on what it gives -- store
+  ready, the synced counts, the agent live.
+- **Chapter two, simplified** (the step list beside the thread "never gets
+  simpler"): the four bordered steps and the call-to-action block became one
+  short pitch beside the thread, in the sectors card's grammar -- the thread
+  left, the copy right -- with the four benefits as one-line bullets and the
+  same two ways in. The thread lost one message. The helix is untouched.
+- **Chapter three, shorter and about commerce** ("focus on things like
+  order created, added to cart"): five events in the order a sale happens --
+  product recommended, added to cart, checkout started, order created, cart
+  recovered -- one short row each (name, what it means, the event's code
+  name), the way in under them, and a handler for two of them beside. The
+  rails spread to fill the drawing and carry the events' names in the
+  journey's pixel capitals. The lower part went from about 560px to 380px.

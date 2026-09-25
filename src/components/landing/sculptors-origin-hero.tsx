@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { HeroDashboard } from '@/components/landing/hero-dashboard';
 import { IsoStage } from '@/components/landing/iso-stage';
 import { MarketplaceLogos } from '@/components/landing/marketplace-logos';
+import { SectorShowcase } from '@/components/landing/sector-showcase';
 
 const NAV_ITEMS = [
   { label: 'Platform', href: '#platform' },
@@ -65,10 +66,12 @@ export function SculptorsOriginHero() {
       <div className="hero-copy">
         <h1
           id="sculptors-hero-title"
-          className="super-display m-0 text-[clamp(48px,5.2vw,80px)] leading-[0.94] tracking-[-0.045em] text-lp-ink max-md:text-[clamp(44px,12vw,60px)]"
+          className="lp-display super-display m-0 text-[clamp(48px,5.2vw,80px)] leading-[0.98] tracking-[-0.025em] text-lp-ink max-md:text-[clamp(44px,12vw,60px)]"
         >
           <span className="block">The Agent Store</span>
-          <span className="block">Autonomous Sales Intelligence</span>
+          <span className="block">
+            Autonomous <span className="lp-hero-accent">Sales Intelligence</span>
+          </span>
         </h1>
 
         <p className="super-body mt-7 max-w-[920px] text-[clamp(17px,1.35vw,21px)] font-semibold leading-[1.3] tracking-[-0.025em] text-lp-ink/70 max-md:max-w-[420px] max-md:text-[16px]">
@@ -107,6 +110,9 @@ export function SculptorsOriginHero() {
       </IsoStage>
 
       <MarketplaceLogos />
+
+      {/* The brand band runs on: the sectors the agents sell in. */}
+      <SectorShowcase />
     </section>
   );
 }

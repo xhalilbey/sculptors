@@ -16,9 +16,10 @@ const COLUMNS = [
   {
     title: 'PLATFORM',
     links: [
-      { label: 'Agent Store', href: '#platform' },
-      { label: 'The agent', href: '#agent' },
-      { label: 'Integrations', href: '#platform' },
+      { label: 'Agent Store', href: '#agent-store' },
+      { label: 'Integrate', href: '#memory' },
+      { label: 'Engines', href: '#engines' },
+      { label: 'Events', href: '#integrations' },
       { label: 'FAQ', href: '#faq' },
     ],
   },

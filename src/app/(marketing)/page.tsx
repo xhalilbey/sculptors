@@ -1,28 +1,18 @@
 'use client';
 
 import {
-  BarChart3,
   Car,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  CircleDollarSign,
-  Megaphone,
-  MessageSquareText,
   Palette,
   Plane,
-  Route,
-  Sparkles,
   Store,
-  Target,
 } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
-import type { CSSProperties } from 'react';
-import { memo, useEffect, useRef, useState } from 'react';
-import { AgentShowcase } from '@/components/landing/agent-showcase';
-import { AgentStoreParts } from '@/components/landing/agent-store-parts';
-import { landingPixel, landingSans } from '@/components/landing/fonts';
+import { useEffect, useState } from 'react';
+import { AgentJourney } from '@/components/landing/agent-journey';
+import { Engines } from '@/components/landing/engines';
+import { landingDisplay, landingPixel, landingSans } from '@/components/landing/fonts';
 import { GraphMemoryHero } from '@/components/landing/graph-memory-hero';
 import { useLandingTheme } from '@/components/landing/landing-theme';
 import { RevealObserver } from '@/components/landing/reveal-observer';
@@ -32,84 +22,6 @@ import { SiteFooter } from '@/components/landing/site-footer';
 type LandingHeroVariant = 'origin' | 'graph-memory' | 'legacy-woman';
 const LANDING_HERO_VARIANT = (process.env.NEXT_PUBLIC_LANDING_HERO_VARIANT ??
   'origin') as LandingHeroVariant;
-
-/**
- * The action cards' grounds, after Bending Spoons' product row: flat pastels
- * that sit either side of the brand's lime without competing with it. They
- * cycle, so the row stays varied however many cards it ends up carrying.
- */
-const ACTION_GROUNDS = ['#dce9a8', '#f6d24b', '#f2c6a0', '#d9d6f2', '#c9e4de', '#f0dcc4'];
-
-const AGENT_ACTION_CARDS = [
-  {
-    id: 'growth-agent',
-    label: 'Grow With Clarity',
-    title: 'Know what is driving growth and what to scale next.',
-    description:
-      'Connect performance, spend, product, and revenue signals to see where to invest, what to stop, and which opportunities deserve focus.',
-    memory:
-      'campaign changes, spend decisions, product events, retained revenue, and past experiment results',
-    icon: BarChart3,
-  },
-  {
-    id: 'creative-agent',
-    label: 'Create What Works',
-    title: 'Turn proven creative learnings into stronger briefs.',
-    description:
-      'Carry winning angles, tired concepts, visual patterns, and audience reactions into every new creative direction.',
-    memory: 'winning angles, tired concepts, audience reactions, visual patterns, and past tests',
-    icon: Sparkles,
-  },
-  {
-    id: 'campaign-agent',
-    label: 'Launch Campaigns',
-    title: 'Turn customer events into sales campaigns through Sculptors.',
-    description:
-      'Know every customer on every channel — then transform their behavior, messages, and purchase signals into targeted sales campaigns on WhatsApp, SMS, and beyond. Every customer signal feeds the next sale.',
-    memory:
-      'customer events, purchase signals, WhatsApp replies, audience segments, channel activity, and prior campaign learnings',
-    icon: Megaphone,
-  },
-  {
-    id: 'retention-agent',
-    label: 'Keep Customers Close',
-    title: 'Reach customers before they drift away.',
-    description:
-      'Recognize churn risk, understand the cause, and prepare the most relevant recovery action for every customer segment.',
-    memory:
-      'cohort behavior, subscription events, onboarding friction, support issues, and previous rescue outcomes',
-    icon: Target,
-  },
-  {
-    id: 'revenue-agent',
-    label: 'Protect Revenue',
-    title: 'Understand revenue movement before value is lost.',
-    description:
-      'Connect acquisition quality, purchases, subscriptions, pricing, and refunds to explain what changed and why.',
-    memory:
-      'pricing tests, payer cohorts, refunds, offer history, subscription changes, and revenue anomalies',
-    icon: CircleDollarSign,
-  },
-  {
-    id: 'customer-voice-agent',
-    label: 'Understand Customer Voice',
-    title: 'Connect what customers say with what they do.',
-    description:
-      'Relate reviews, support conversations, survey answers, and objections to purchases, product usage, and retention.',
-    memory: 'support conversations, reviews, replies, survey answers, purchases, and product usage',
-    icon: MessageSquareText,
-  },
-  {
-    id: 'lifecycle-agent',
-    label: 'Personalize Every Journey',
-    title: 'Send the right message at the right moment.',
-    description:
-      'Use each customer’s history, preferences, timing, and current intent to shape relevant lifecycle actions across every channel.',
-    memory:
-      'customer preferences, prior messages, purchase history, saved items, delivery details, and response timing',
-    icon: Route,
-  },
-] as const;
 
 type HeroExchange = {
   user: string;
@@ -392,7 +304,7 @@ export default function LandingPage() {
 
   return (
     <div
-      className={`landing-night ${landingSans.variable} ${landingPixel.variable} min-h-screen w-full overflow-x-hidden bg-lp-ground text-lp-ink selection:bg-lp-ink selection:text-lp-ground`}
+      className={`landing-night ${landingSans.variable} ${landingPixel.variable} ${landingDisplay.variable} min-h-screen w-full overflow-x-hidden bg-lp-ground text-lp-ink selection:bg-lp-ink selection:text-lp-ground`}
       data-theme={landingTheme}
     >
       <RevealObserver />
@@ -486,18 +398,13 @@ export default function LandingPage() {
         </div>
       )}
 
-      <div className="relative z-20 mt-0 w-full bg-lp-ground text-lp-ink">
-        {/* 3. MEET THE AGENT -- the white band */}
-        <AgentShowcase />
+      {/* How the agent sells: before the message, in the conversation, after
+          the sale (agent-journey.tsx). It replaced the agent's cards, the
+          store's parts and the action row on 24 Sep 2026. */}
+      <AgentJourney />
 
-        {/* 3.5 PARTS OF THE AGENT STORE -- the dark band under it */}
-        <AgentStoreParts />
-
-        {/* 4.5 ACTION BRAIN */}
-        <section className="relative bg-lp-ground pb-20 pt-20 md:pb-28 md:pt-28">
-          <AgentActionCarousel />
-        </section>
-      </div>
+      {/* Our in-house engines (engines.tsx), where the action row was. */}
+      <Engines />
 
       {/* 9. FAQ SECTION */}
       <section
@@ -760,172 +667,6 @@ function HeroFloatingElements({
     </div>
   );
 }
-
-/**
- * The action cards.
- *
- * Memoised on purpose. It has no props, so the catalog's auto-advancing tab
- * state -- which re-renders the whole landing page every few seconds -- can
- * no longer re-render this subtree. Re-rendering a horizontally scrolling
- * track mid-animation is what made the cards stutter.
- */
-const AgentActionCarousel = memo(function AgentActionCarousel() {
-  const trackRef = useRef<HTMLDivElement>(null);
-  const pauseAutoplayUntilRef = useRef(0);
-  /** Cached so the animation frame never forces a synchronous layout. */
-  const maxScrollRef = useRef(0);
-
-  const scrollCards = (direction: -1 | 1) => {
-    const track = trackRef.current;
-
-    if (!track) {
-      return;
-    }
-
-    const firstCard = track.querySelector<HTMLElement>('article');
-    const cardGap = 20;
-    const cardStep = firstCard
-      ? firstCard.offsetWidth + cardGap
-      : Math.min(track.clientWidth * 0.82, 460);
-    const maxScrollLeft = track.scrollWidth - track.clientWidth;
-
-    maxScrollRef.current = maxScrollLeft;
-
-    pauseAutoplayUntilRef.current = performance.now() + 1400;
-
-    if (direction < 0 && track.scrollLeft <= 0) {
-      track.scrollTo({ left: maxScrollLeft, behavior: 'auto' });
-    }
-
-    if (direction > 0 && track.scrollLeft >= maxScrollLeft - 2) {
-      track.scrollTo({ left: 0, behavior: 'auto' });
-    }
-
-    track.scrollBy({
-      left: direction * cardStep,
-      behavior: 'smooth',
-    });
-  };
-
-  useEffect(() => {
-    const track = trackRef.current;
-
-    if (!track || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      return;
-    }
-
-    let frameId = 0;
-    let lastFrameTime = performance.now();
-    const pixelsPerSecond = 18;
-
-    /*
-      Reading scrollWidth/clientWidth flushes pending layout. Doing it every
-      frame meant that whenever anything above the carousel changed size, the
-      loop paid for a full-page reflow 60 times a second and dropped frames --
-      which is what the drift looked like. Measure on resize instead.
-    */
-    const measure = () => {
-      maxScrollRef.current = track.scrollWidth - track.clientWidth;
-    };
-
-    measure();
-
-    const observer = new ResizeObserver(measure);
-
-    observer.observe(track);
-
-    const animate = (time: number) => {
-      const elapsedSeconds = Math.min((time - lastFrameTime) / 1000, 0.05);
-
-      lastFrameTime = time;
-
-      if (time >= pauseAutoplayUntilRef.current) {
-        track.scrollLeft += pixelsPerSecond * elapsedSeconds;
-      }
-
-      if (maxScrollRef.current > 0 && track.scrollLeft >= maxScrollRef.current - 1) {
-        track.scrollLeft = 0;
-      }
-
-      frameId = window.requestAnimationFrame(animate);
-    };
-
-    frameId = window.requestAnimationFrame(animate);
-
-    return () => {
-      window.cancelAnimationFrame(frameId);
-      observer.disconnect();
-    };
-  }, []);
-
-  return (
-    <div className="relative">
-      <div className="mx-auto mb-5 max-w-4xl px-5 text-center sm:px-6">
-        <p className="lp-label text-lp-ink/50">
-          From memory to action
-        </p>
-        <h2 className="super-heading mt-3 text-3xl text-lp-ink sm:text-4xl md:text-5xl">
-          Turn customer intelligence into measurable sales.
-        </h2>
-        <p className="super-body mx-auto mt-4 max-w-2xl text-sm text-lp-ink/65 sm:text-base md:text-lg">
-          See who is ready to buy, understand what they need, launch stronger campaigns, and let
-          sales agents continue the conversation across WhatsApp, SMS, and every connected channel.
-        </p>
-      </div>
-
-      <div className="mx-auto mb-3 flex max-w-7xl justify-end gap-2 px-5 sm:px-6">
-        <div className="flex shrink-0 gap-2">
-          <button
-            type="button"
-            onClick={() => scrollCards(-1)}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-lp-ink/10 bg-lp-raised text-lp-ink/64 transition-colors hover:text-lp-ink"
-            aria-label="Scroll action cards left"
-          >
-            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            onClick={() => scrollCards(1)}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-lp-ink/10 bg-lp-raised text-lp-ink/64 transition-colors hover:text-lp-ink"
-            aria-label="Scroll action cards right"
-          >
-            <ChevronRight className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </div>
-      </div>
-
-      <div
-        ref={trackRef}
-        className="action-brain-track flex gap-4 overflow-x-auto px-[max(1.25rem,calc((100vw-1280px)/2))] pb-8 sm:gap-5"
-      >
-        {AGENT_ACTION_CARDS.map((card, index) => {
-          const Icon = card.icon;
-
-          return (
-            <article
-              key={card.id}
-              className="action-card group relative min-w-[76vw] max-w-[360px] overflow-hidden sm:min-w-[340px] lg:min-w-[360px]"
-              style={{ '--ground': ACTION_GROUNDS[index % ACTION_GROUNDS.length] } as CSSProperties}
-            >
-              <div className="px-6 pb-7 pt-7">
-                <div className="action-label flex items-center gap-2">
-                  <Icon className="h-4 w-4" aria-hidden="true" />
-                  <p className="text-sm font-medium">{card.label}</p>
-                </div>
-                <h3 className="mt-5 text-[23px] font-semibold leading-[1.04] tracking-[-0.03em]">
-                  {card.title}
-                </h3>
-                <p className="action-copy mt-3 text-sm font-medium leading-relaxed">
-                  {card.description}
-                </p>
-              </div>
-            </article>
-          );
-        })}
-      </div>
-    </div>
-  );
-});
 
 function FaqItem({
   question,
